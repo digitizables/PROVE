@@ -58,6 +58,7 @@ export type Claim = {
   statement: string;
   goal_id: string;
   path: string;
+  class_name: string;
   check: string;
   check_detail: CheckDetail | null;
 };

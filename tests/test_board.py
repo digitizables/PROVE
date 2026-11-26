@@ -184,6 +184,7 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board["brief"]["action"], "done")
         claim = next(item for item in board["claims"] if item["id"] == "claim:map")
         self.assertEqual(claim["status"], "supported")
+        self.assertEqual(claim["class_name"], "Script")
         self.assertIn("simulation-present", claim["check"])
         view = evidence_view(place, "intent:read-simulation")
         blob = json.dumps({"board": board, "evidence": view})

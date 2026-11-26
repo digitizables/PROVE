@@ -8,12 +8,32 @@
   type NavId = "place" | "goals" | "evidence";
 
   let nav = $state<NavId>("place");
-  let sidebarExpanded = $state(false);
+  let sidebarExpanded = $state(loadExpanded());
   let places = $state<PlaceFile[]>([]);
   let file = $state("");
   let board = $state<Board | null>(null);
-  let error = $state("");
+  let loadError = $state("");
+  let notice = $state("");
   let busy = $state(false);
+  let focusClaim = $state("");
+  let focusIntent = $state("");
+  let focusToken = $state(0);
+
+  function loadExpanded(): boolean {
+    try {
+      return localStorage.getItem("prove.sidebar") !== "0";
+    } catch {
+      return true;
+    }
+  }
+
+  $effect(() => {
+    try {
+      localStorage.setItem("prove.sidebar", sidebarExpanded ? "1" : "0");
+    } catch {
+      // The page still works when storage is blocked.
+    }
+  });
 
   async function loadPlaces(prefer?: string) {
     const payload = await getPlaces();
@@ -32,31 +52,39 @@
       return;
     }
     board = await getBoard(name);
-    error = "";
   }
 
-  async function refresh() {
+  async function refresh(clearNotice = false) {
+    if (clearNotice) notice = "";
     try {
       await loadPlaces(file);
       await loadBoard();
+      loadError = "";
     } catch (caught) {
-      error = caught instanceof Error ? caught.message : "The board did not load";
+      loadError = caught instanceof Error ? caught.message : "The board did not load";
     }
+  }
+
+  function open(next: NavId, focus?: { claim?: string; intent?: string }) {
+    focusClaim = focus?.claim || "";
+    focusIntent = focus?.intent || "";
+    focusToken += 1;
+    nav = next;
   }
 
   async function mutate(path: string, body: Record<string, unknown>) {
     if (!file) return;
     busy = true;
-    error = "";
+    notice = "";
     try {
       const result = await postJson(path, { file, ...body });
       board = result.board;
       if (result.code && result.code !== 0) {
-        error = result.lines.join(" ");
+        notice = result.lines.join(" ");
       }
       await loadPlaces(file);
     } catch (caught) {
-      error = caught instanceof Error ? caught.message : "The board did not save";
+      notice = caught instanceof Error ? caught.message : "The board did not save";
     } finally {
       busy = false;
     }
@@ -79,7 +107,7 @@
     <select
       class="title-select"
       bind:value={file}
-      onchange={() => loadBoard().catch((caught) => (error = caught instanceof Error ? caught.message : "The board did not load"))}
+      onchange={() => loadBoard().catch((caught) => (loadError = caught instanceof Error ? caught.message : "The board did not load"))}
     >
       {#if places.length === 0}
         <option value="">No place file</option>
@@ -117,7 +145,7 @@
         </button>
       </div>
       <div class="sidebar-spacer"></div>
-      <button class="nav-item" type="button" title="Refresh" onclick={refresh}>
+      <button class="nav-item" type="button" title="Refresh" onclick={() => refresh(true)}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
         <span class="nav-label">Refresh</span>
       </button>
@@ -126,19 +154,19 @@
     <section class="workspace">
       {#if board}
         {#if nav === "place"}
-          <PlaceView {board} {busy} onplan={() => mutate("/api/plan", {})} onanswer={(question, text) => mutate("/api/answer", { question, text })} />
+          <PlaceView {board} {busy} onplan={() => mutate("/api/plan", {})} onanswer={(question, text) => mutate("/api/answer", { question, text })} onopen={open} />
         {:else if nav === "goals"}
-          <GoalsView {board} {busy} ongoal={(body) => mutate("/api/goal", body)} onbind={(body) => mutate("/api/bind", body)} />
+          <GoalsView {board} {busy} {focusClaim} {focusToken} ongoal={(body) => mutate("/api/goal", body)} onbind={(body) => mutate("/api/bind", body)} />
         {:else}
-          <EvidenceView {board} />
+          <EvidenceView {board} {focusIntent} {focusToken} />
         {/if}
       {:else}
         <div class="surface">
-          <p class="empty">{error || "Loading the place board."}</p>
+          <p class="empty">{loadError || "Loading the place board."}</p>
         </div>
       {/if}
-      {#if error && board}
-        <p class="error-banner">{error}</p>
+      {#if (notice || loadError) && board}
+        <p class="error-banner">{notice || loadError}</p>
       {/if}
     </section>
   </div>

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { getEvidence, type Board, type Evidence, type IntentRow } from "./api";
   import { tone } from "./tone";
+  import { when } from "./when";
 
-  let { board }: { board: Board } = $props();
+  let { board, focusIntent = "", focusToken = 0 }: { board: Board; focusIntent?: string; focusToken?: number } = $props();
 
   let selected = $state("");
   let detail = $state<Evidence | null>(null);
@@ -27,6 +28,20 @@
     detail = null;
     detailError = "";
   });
+
+  let seenToken = 0;
+  $effect(() => {
+    if (!focusIntent || focusToken === seenToken) return;
+    seenToken = focusToken;
+    const row = board.intents.find((item) => item.id === focusIntent);
+    if (row) pick(row);
+  });
+
+  function mark(passed: boolean | null): string {
+    if (passed === true) return "pass";
+    if (passed === false) return "fail";
+    return "open";
+  }
 </script>
 
 <div class="surface">
@@ -57,8 +72,8 @@
               <td class="mono">{row.order ?? "—"}</td>
               <td class="mono">{row.id}</td>
               <td>{row.worker} {row.action}</td>
-              <td class={"tone-" + tone(row.status)}>{row.status}</td>
-              <td class={"tone-" + tone(row.verdict)}>{row.verdict || "—"}</td>
+              <td><span class={"pill pill-" + tone(row.status)}>{row.status}</span></td>
+              <td>{#if row.verdict}<span class={"pill pill-" + tone(row.verdict)}>{row.verdict}</span>{:else}—{/if}</td>
               <td>{row.evidence_summary || row.summary}</td>
             </tr>
           {/each}
@@ -69,17 +84,25 @@
       <p class="error-banner">{detailError}</p>
     {/if}
     {#if detail}
-      <div class="detail mono">
-        <h3 class={"tone-" + tone(detail.verdict)}>{detail.intent_id} · {detail.missing ? "no file" : detail.verdict}</h3>
-        {detail.summary || "No summary."}
-        {#if detail.limits}
-          {"\n"}{detail.limits}
-        {/if}
+      <div class="detail">
+        <h3>
+          <span class="mono">{detail.intent_id}</span>
+          <span class={"pill pill-" + tone(detail.missing ? "blocked" : detail.verdict)}>{detail.missing ? "no file" : detail.verdict || "open"}</span>
+        </h3>
+        <p>{detail.summary || "No summary."}</p>
+        {#if detail.limits}<p class="tone-muted">{detail.limits}</p>{/if}
+        {#if detail.captured_at}<p class="tone-muted">{when(detail.captured_at)}</p>{/if}
         {#each detail.checks as check}
-          {"\n"}{check.passed === true ? "pass" : check.passed === false ? "fail" : "open"} {check.id} {check.detail}
+          <div class="obs">
+            <span class="k"><span class={"pill pill-" + tone(mark(check.passed))}>{mark(check.passed)}</span></span>
+            <span class="mono">{check.id} {check.detail}</span>
+          </div>
         {/each}
         {#each detail.observations as item}
-          {"\n"}{item.kind}: {item.text}
+          <div class="obs">
+            <span class="k">{item.kind}</span>
+            <span class="mono">{item.text}</span>
+          </div>
         {/each}
       </div>
     {/if}

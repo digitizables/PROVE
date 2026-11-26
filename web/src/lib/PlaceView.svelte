@@ -1,21 +1,25 @@
 <script lang="ts">
   import type { Board } from "./api";
   import { tone } from "./tone";
+  import { when } from "./when";
 
   let {
     board,
     busy = false,
     onplan,
     onanswer,
+    onopen,
   }: {
     board: Board;
     busy?: boolean;
     onplan: () => void;
     onanswer: (question: string, text: string) => void;
+    onopen: (nav: "goals" | "evidence", focus?: { claim?: string; intent?: string }) => void;
   } = $props();
 
   let answerText = $state("");
   let answerFor = $state("");
+  let copied = $state(false);
 
   $effect(() => {
     const ids = board.brief.questions.map((item) => item.id);
@@ -34,12 +38,25 @@
     return "";
   });
 
+  const latest = $derived(
+    [...board.intents].reverse().find((row) => row.verdict) ?? board.intents[board.intents.length - 1] ?? null,
+  );
+
+  const doneGoals = $derived(board.goals.filter((goal) => goal.status === "done"));
+
   function submitAnswer(event: SubmitEvent) {
     event.preventDefault();
     const question = answerFor || board.brief.questions[0]?.id || "";
     if (!question || !answerText.trim()) return;
     onanswer(question, answerText.trim());
     answerText = "";
+  }
+
+  async function copyCommand() {
+    if (!command) return;
+    await navigator.clipboard.writeText(command);
+    copied = true;
+    setTimeout(() => (copied = false), 1200);
   }
 </script>
 
@@ -62,11 +79,18 @@
     </div>
     {#if board.brief.summary || board.brief.reason}
       <p class="action-copy">{board.brief.summary || board.brief.reason}</p>
+    {:else if board.brief.action === "done" && doneGoals.length === 0}
+      <p class="action-copy">No open goal.</p>
     {/if}
     {#if command}
-      <div class="command mono">{command}</div>
+      <div class="command-row">
+        <div class="command mono">{command}</div>
+        <button class="ghost-btn" type="button" onclick={copyCommand}>{copied ? "Copied" : "Copy"}</button>
+      </div>
       {#if board.brief.action === "run"}
         <p class="action-copy">Run this in the terminal. A verify stops a play that is already running.</p>
+      {:else if board.brief.action === "plan"}
+        <p class="action-copy">Plan writes the next intent into this place file.</p>
       {:else if board.brief.action === "fill"}
         <p class="action-copy">
           The current body is {board.brief.source_bytes ?? 0} bytes
@@ -76,14 +100,14 @@
         </p>
       {/if}
     {/if}
-    <div class="kv">
-      <div><span class="k">Active intent</span><span class="v mono">{board.active_intent || "none"}</span></div>
-      <div><span class="k">Next intent</span><span class="v mono">{board.next_intent || "none"}</span></div>
-      <div><span class="k">Studio name</span><span class="v">{board.display_name || "—"}</span></div>
-      <div><span class="k">Place id</span><span class="v mono">{board.place_id || "—"}</span></div>
-      <div><span class="k">Universe id</span><span class="v mono">{board.universe_id || "—"}</span></div>
-      <div><span class="k">Updated</span><span class="v mono">{board.updated_at || "—"}</span></div>
+    <div class="meta-row">
+      {#if board.display_name}<span class="pill">{board.display_name}</span>{/if}
+      {#if board.place_id}<span class="pill mono">{board.place_id}</span>{/if}
+      {#if board.universe_id}<span class="pill mono">{board.universe_id}</span>{/if}
+      <span class="pill" title={board.updated_at}>{when(board.updated_at)}</span>
+      {#if board.active_intent}<span class="pill mono">active {board.active_intent}</span>{/if}
     </div>
+
     {#if board.brief.questions.length}
       <div class="form-pad">
         <h3>Questions</h3>
@@ -107,13 +131,65 @@
         </form>
       </div>
     {/if}
+
+    {#if board.goals.length}
+      <h3 class="section-label">Goals</h3>
+      <table class="sessions">
+        <tbody>
+          {#each board.goals as goal}
+            <tr class="clickable" onclick={() => onopen("goals")}>
+              <td>
+                <div class="goal-line">
+                  <span class={"pill pill-" + tone(goal.status)}>{goal.status}</span>
+                  <strong>{goal.name || goal.id}</strong>
+                  <span class="statement">{goal.statement}</span>
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+
+    {#if board.claims.length}
+      <h3 class="section-label">Claims</h3>
+      <table class="sessions">
+        <tbody>
+          {#each board.claims as claim}
+            <tr class="clickable" onclick={() => onopen("goals", { claim: claim.id })}>
+              <td>
+                <div class="goal-line">
+                  <span class={"pill pill-" + tone(claim.status)}>{claim.status}</span>
+                  <strong>{claim.name || claim.id}</strong>
+                  {#if claim.check}<span class="pill check-chip" title={claim.check}>{claim.check}</span>{/if}
+                </div>
+                {#if claim.statement}<div class="tone-muted">{claim.statement}</div>{/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+
+    {#if latest}
+      <h3 class="section-label">Latest evidence</h3>
+      <table class="sessions">
+        <tbody>
+          <tr class="clickable" onclick={() => onopen("evidence", { intent: latest.id })}>
+            <td class="mono">{latest.order ?? "—"}</td>
+            <td class="mono">{latest.id}</td>
+            <td><span class={"pill pill-" + tone(latest.verdict || latest.status)}>{latest.verdict || latest.status}</span></td>
+            <td>{latest.evidence_summary || latest.summary}</td>
+          </tr>
+        </tbody>
+      </table>
+    {/if}
+
     {#if board.brief.scripts?.length}
-      <div class="form-pad">
-        <h3>Observed scripts</h3>
-        {#each board.brief.scripts as script}
-          <p class="note mono">{script.id} {script.path} {script.class_name}</p>
-        {/each}
-      </div>
+      <h3 class="section-label">Observed scripts</h3>
+      {#each board.brief.scripts as script}
+        <p class="note mono">{script.id} {script.path} {script.class_name}</p>
+      {/each}
     {/if}
   </div>
 </div>

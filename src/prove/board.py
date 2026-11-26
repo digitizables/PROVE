@@ -153,6 +153,7 @@ def _claim(place: Place, node: dict) -> dict:
         "statement": str(props.get("statement") or ""),
         "goal_id": str(props.get("goal_id") or ""),
         "path": str(props.get("path") or ""),
+        "class_name": _script_class(place, str(props.get("path") or "")),
         "check": _check_label(check),
         "check_detail": _public_check(check),
     }
@@ -174,6 +175,16 @@ def _intent(place: Place, intent: dict) -> dict:
         "verdict": str(evidence.get("status") or "") if evidence else "",
         "evidence_summary": str(evidence_props.get("summary") or ""),
     }
+
+
+def _script_class(place: Place, path: str) -> str:
+    if not path.strip():
+        return ""
+    node = place.find_script(path)
+    if node is None:
+        return ""
+    class_name = (node.get("props") or {}).get("class_name")
+    return class_name if isinstance(class_name, str) else ""
 
 
 def _has_check(check: dict | None) -> bool:

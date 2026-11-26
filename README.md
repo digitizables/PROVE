@@ -42,7 +42,7 @@ place graph + open goal
 
 ## Place board
 
-`python -m prove ui` opens a local page at `http://127.0.0.1:8765/`. It shows one place file: the next action, the claims, and the evidence summaries. Goal, bind, plan, and answer save the place file. Run stays in the terminal. The page does not call Studio, and it does not show script bodies.
+`python -m prove ui` opens a local page at `http://127.0.0.1:8765/`. The place page shows the next action, each goal, each claim, and the latest evidence. Goal and bind forms stay closed until they are opened. Those forms, plus plan and answer, save the place file. Run stays in the terminal. The page does not call Studio, and it does not show script bodies.
 
 The page is the Svelte app in `web/`. `npm run build` there writes `web/static`, which `ui` serves. `npm run dev` proxies `/api` to port 8765.
 
