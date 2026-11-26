@@ -1,6 +1,6 @@
 # Playbook: iterate on a failure
 
-Use this when the latest evidence verdict is `fail` or `inconclusive`.
+Use this when the latest evidence verdict is `fail` or `inconclusive`. `python -m prove plan` follows these steps and does not call Studio.
 
 1. Read `failures`, `checks`, and `console.reset` from the evidence file. Quote the check id in the next intent's summary.
 2. When the verdict is `inconclusive` because `console.reset` is true, the next intent is a playtest that snapshots Output again. The previous `passed` flag is not a claim.

@@ -212,6 +212,31 @@ def _settle(place: Place, intent: dict, evidence: dict, stored_path: str) -> tup
     return nodes, edges, statuses
 
 
+def missing_input(intent: dict) -> str | None:
+    """The first required input that is empty, or None when the intent can start."""
+    props = intent.get("props") or {}
+    inputs = props.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        return "inputs"
+    required: tuple[str, ...] = ()
+    if props.get("worker") == "script" and props.get("action") == "read_source":
+        required = ("path",)
+    elif props.get("worker") == "script" and props.get("action") == "write_source":
+        required = ("path", "source")
+    for key in required:
+        value = inputs.get(key)
+        if not isinstance(value, str) or value == "":
+            return key
+    return None
+
+
+def require_ready(intent: dict) -> None:
+    """Raise before Studio is contacted when a required input is empty."""
+    missing = missing_input(intent)
+    if missing:
+        raise NeedPerson(f"{intent['id']} is missing inputs.{missing}")
+
+
 def _require(intent: dict, key: str) -> str:
     value = (intent["props"].get("inputs") or {}).get(key)
     if not isinstance(value, str) or value == "":

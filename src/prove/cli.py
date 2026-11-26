@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from prove.graph import Place, PlaceError
+from prove.planner import plan
 from prove.records import envelope, worker_result
 from prove.session import (
     UnsupportedIntent,
@@ -17,7 +18,7 @@ from prove.session import (
     evidence_paths,
     run_intent,
 )
-from prove.workers import _settle
+from prove.workers import NeedPerson, _settle, require_ready
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,10 +26,12 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, OSError):
         pass
-    parser = argparse.ArgumentParser(prog="prove", description="Run one PROVE intent and record the evidence.")
+    parser = argparse.ArgumentParser(prog="prove", description="Plan or run one PROVE intent and record the evidence.")
     sub = parser.add_subparsers(dest="command", required=True)
     status = sub.add_parser("status", help="Show the active intent, the next intent, and open questions.")
     status.add_argument("place", help="Path to a prove.place/1 file")
+    planned = sub.add_parser("plan", help="Append the next intent from the latest evidence. Does not call Studio.")
+    planned.add_argument("place", help="Path to a prove.place/1 file")
     run = sub.add_parser("run", help="Run the next ready intent against the open Studio window.")
     run.add_argument("place", help="Path to a prove.place/1 file")
     run.add_argument("--name", help="Studio window whose name contains this text. Overrides identity.display_name.")
@@ -47,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
             print(exc, file=sys.stderr)
             return 2
         return 0
+    if args.command == "plan":
+        try:
+            outcome = plan(place)
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print("\n".join(outcome.lines))
+        return outcome.code
     if Path(args.place).name == "example.place.json":
         print(
             "Copy this sample to graph/places/<id>.local.json and run that file. "
@@ -57,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_studio(place, name=args.name, studio_id=args.studio_id)
     except UnsupportedIntent as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    except NeedPerson as exc:
         print(exc, file=sys.stderr)
         return 2
     except PlaceError as exc:
@@ -110,6 +124,7 @@ def run_studio(place: Place, *, name: str | None, studio_id: str | None) -> dict
     if intent is None:
         raise PlaceError("No proposed intent is ready")
     ensure_supported(intent)
+    require_ready(intent)
     selector: dict[str, str] = {}
     if studio_id:
         selector["studio_id"] = studio_id

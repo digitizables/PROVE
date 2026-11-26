@@ -27,4 +27,4 @@ python -m prove status graph/places/example.local.json
 python -m prove run graph/places/example.local.json --name "The open place"
 ```
 
-The first run reads HelloAgent and stores `source_sha256`. The second playtests. A pass supports `claim:hello-prints` and sets `goal:hello` to `done`. `--name` selects the Studio window and overrides `identity.display_name`. The runtime does not save the Roblox place.
+The first run reads HelloAgent and stores `source_sha256`. The second playtests. A pass supports `claim:hello-prints` and sets `goal:hello` to `done`. A fail leaves the goal open. `python -m prove plan` then appends a write and a recheck. `--name` selects the Studio window and overrides `identity.display_name`. The runtime does not save the Roblox place.

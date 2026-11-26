@@ -8,7 +8,15 @@ from pathlib import Path
 
 from prove.graph import Place, PlaceError
 from prove.records import envelope, worker_result
-from prove.workers import NeedPerson, change_and_verify, overview, read_source, verify_output, write_source
+from prove.workers import (
+    NeedPerson,
+    change_and_verify,
+    overview,
+    read_source,
+    require_ready,
+    verify_output,
+    write_source,
+)
 
 IMPLEMENTED = {
     ("script", "read_source"): read_source,
@@ -37,6 +45,7 @@ def begin(place: Place) -> dict:
         raise PlaceError("No proposed intent is ready")
     ensure_supported(intent)
     if intent["status"] == "proposed":
+        require_ready(intent)
         place.activate(intent["id"])
         place.save()
     return intent
