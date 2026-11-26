@@ -66,7 +66,7 @@ An unverified claim with `props.goal_id` and `props.check`, and no verify yet, g
 
 A failed check adds `write_source` for the script that implements the claim. `inputs.path` and `inputs.class_name` are filled. `inputs.source` is left empty for the person or the agent. When that script is `unverified` or `stale`, or no local evidence file has its source, a `read_source` intent is ordered first. The recheck is `verify_output` with the same playtest inputs, and its `after` is the write. When the graph has no script path, the first intent is `overview`.
 
-The same failed observation on one claim, three times, adds a blocked intent and an open question. The failed evidence nodes stay. Reject that blocked intent after the question is answered if a later `plan` should run.
+The same failed observation on one claim, three times, adds a blocked intent and an open question. The failed evidence nodes stay. `answer` rejects that blocked intent. The next `plan` counts failures captured after the answer and quotes the answer on the fix.
 
 ## What a run persists
 

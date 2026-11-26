@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 
-from prove.graph import Place, PlaceError, script_key, slug
+from prove.graph import Place, PlaceError, script_key, slug, utc_now
 from prove.planner import play_summary, playtest_inputs, queue_read
 
 SAMPLE = (
@@ -253,6 +253,23 @@ def answer_question(place: Place, question_id: str, text: str) -> None:
         props = {}
         node["props"] = props
     props["answer"] = text.strip()
+    props["answered_at"] = utc_now()
+    _release_stop(place, question_id)
+
+
+def _release_stop(place: Place, question_id: str) -> None:
+    """The blocked intent was waiting on this answer. Reject it so plan can continue."""
+    for intent in place.intents():
+        if intent.get("status") != "blocked":
+            continue
+        props = intent.get("props") or {}
+        linked = props.get("question_id")
+        summary = str(props.get("summary") or "")
+        if linked != question_id and question_id not in summary:
+            continue
+        intent["status"] = "rejected"
+        if isinstance(props, dict):
+            props["reason"] = "The person answered the question."
 
 
 def _refuse_sample(place: Place) -> None:

@@ -7,6 +7,6 @@ Use this when the latest evidence verdict is `fail` or `inconclusive`. `python -
 3. When the adapter raised `AmbiguousOutcome` or a mutation timeout, the next intent is a read of the script or instance that was being written. A rewrite waits until that read is `done`.
 4. When a check failed, cut one intent that addresses that check. A second failure stays on the claim until this one is re-verified.
 5. Re-run the same verify intent shape (new id, `props.after` pointing at the fix) after the fix intent is `done`.
-6. Three failed verifies of the same claim with no new observation: mark the intent `blocked` and ask the person. The graph keeps the failed evidence nodes.
+6. Three failed verifies of the same claim with no new observation: mark the intent `blocked` and ask the person. The graph keeps the failed evidence nodes. Answering that question rejects the blocked intent. The next `plan` counts only failures captured after `answered_at`, quotes the answer on the fix, and does not ask the same question again until three new failures land.
 
 The worker that failed does not call the adapter again inside the same intent.

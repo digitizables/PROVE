@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent / "roblox-studio-adapter" / "src"))
 sys.path.insert(0, str(ROOT / "src"))
 
+from prove.admit import answer_question  # noqa: E402
+from prove.brief import brief  # noqa: E402
 from prove.cli import main  # noqa: E402
 from prove.graph import Place  # noqa: E402
 from prove.planner import plan  # noqa: E402
@@ -442,6 +444,44 @@ class PlanTests(PlanCase):
             len([node for node in Place.load(stopped.path).nodes() if node["type"] == "question"]),
             2,
         )
+
+    def test_an_answer_rejects_the_stop_and_plans_one_fix(self) -> None:
+        place = self.place("answered.local.json")
+        self.finish_verify(place, claim="contradicted")
+        self.add_verify(place, 2, "missing")
+        self.add_verify(place, 3, "missing")
+        plan(place)
+        saved = Place.load(place.path)
+        self.assertEqual(saved.node("intent:stop-output-contains-1")["props"]["question_id"], "question:hello-prints-stuck")
+        answer_question(saved, "question:hello-prints-stuck", "Look at the module the loader calls.")
+        self.assertEqual(saved.node("intent:stop-output-contains-1")["status"], "rejected")
+        self.assertEqual(saved.node("question:hello-prints-stuck")["props"]["answer"], "Look at the module the loader calls.")
+        self.assertEqual(brief(saved)["action"], "plan")
+        followed = plan(saved)
+        written = Place.load(place.path)
+        write = written.node("intent:fix-output-contains-1")
+        assert write is not None
+        self.assertEqual(followed.code, 0)
+        self.assertIn("Person: Look at the module the loader calls.", write["props"]["summary"])
+        self.assertEqual(len([node for node in written.nodes() if node["type"] == "question"]), 2)
+        self.assertIsNone(written.node("intent:stop-output-contains-1-2"))
+
+    def test_failures_after_the_answer_stop_again(self) -> None:
+        place = self.place("after.local.json")
+        self.finish_verify(place, claim="contradicted")
+        self.add_verify(place, 2, "missing")
+        self.add_verify(place, 3, "missing")
+        plan(place)
+        saved = Place.load(place.path)
+        answer_question(saved, "question:hello-prints-stuck", "Try again.")
+        saved.node("question:hello-prints-stuck")["props"]["answered_at"] = "2020-01-01T00:00:00Z"
+        result = plan(saved)
+        written = Place.load(place.path)
+        self.assertEqual(result.code, 2)
+        self.assertIsNone(written.node("intent:fix-output-contains-1"))
+        self.assertEqual(written.node("intent:stop-output-contains-1")["status"], "rejected")
+        self.assertEqual(written.node("intent:stop-output-contains-1-2")["status"], "blocked")
+        self.assertEqual(len([node for node in written.nodes() if node["type"] == "question"]), 3)
 
     def test_a_new_observation_is_planned_again(self) -> None:
         place = self.place()

@@ -115,7 +115,7 @@ def _follow(place: Place, goal: dict, found: _Record, lines: list[str]) -> tuple
     if _same_failure_count(place, found) >= 3:
         lines.extend(_stop_for_person(place, goal, found))
         return 2, lines
-    lines.extend(_append_fix(place, goal, found))
+    lines.extend(_append_fix(place, goal, found, _person_note(place, found)))
     return 0, lines
 
 
@@ -141,7 +141,7 @@ def _append_replay(place: Place, goal: dict, found: _Record) -> list[str]:
     return [f"added {intent['id']} playtest verify_output"]
 
 
-def _append_fix(place: Place, goal: dict, found: _Record) -> list[str]:
+def _append_fix(place: Place, goal: dict, found: _Record, note: str = "") -> list[str]:
     check_id, quote = _failure_label(found)
     node, path = _target(place, goal["id"], found)
     order = _next_order(place)
@@ -198,7 +198,7 @@ def _append_fix(place: Place, goal: dict, found: _Record) -> list[str]:
             goal_id=goal["id"],
             worker="script",
             action="write_source",
-            summary=_clip(f"{quote}. Write {path}."),
+            summary=_clip(f"{quote}. Write {path}.{_note_suffix(note)}"),
             inputs=write_inputs,
             done_when="The script source is written and source_sha256 is updated.",
             must_not=["Start a playtest.", "Save the place.", "Publish."],
@@ -262,6 +262,7 @@ def _stop_for_person(place: Place, goal: dict, found: _Record) -> list[str]:
     )
     intent["status"] = "blocked"
     intent["props"]["reason"] = "Three failures with the same observation."
+    intent["props"]["question_id"] = question_id
     place.nodes().append(question)
     place.nodes().append(intent)
     place.data["edges"].append(
@@ -302,7 +303,9 @@ def _latest_verify(place: Place, goal_id: str) -> tuple[_Record | None, str | No
 
 
 def _same_failure_count(place: Place, found: _Record) -> int:
+    """Failures with this signature. Ones captured before the person's answer do not count."""
     key = _signature(found.studio)
+    cutoff = _answer_cutoff(place, found)
     count = 0
     intents = place.intents()
     if found.claims:
@@ -313,10 +316,66 @@ def _same_failure_count(place: Place, found: _Record) -> int:
         evidence = _load_evidence(place, intent["id"])
         if evidence is None or evidence.get("verdict") != "fail":
             continue
+        captured = str(evidence.get("captured_at") or "")
+        if cutoff and (not captured or captured <= cutoff):
+            continue
         studio = evidence.get("studio") if isinstance(evidence.get("studio"), dict) else {}
         if _kind(evidence, studio) == "fail" and _signature(studio) == key:
             count += 1
     return count
+
+
+def _answer_cutoff(place: Place, found: _Record) -> str:
+    goal_id = str((found.intent.get("props") or {}).get("goal_id") or "")
+    latest = ""
+    for intent in place.intents():
+        props = intent.get("props") or {}
+        if goal_id and str(props.get("goal_id") or "") != goal_id:
+            continue
+        question = place.node(_linked_question(props))
+        if question is None or question.get("status") != "answered":
+            continue
+        stamp = str((question.get("props") or {}).get("answered_at") or "")
+        if stamp > latest:
+            latest = stamp
+    return latest
+
+
+def _person_note(place: Place, found: _Record) -> str:
+    cutoff = _answer_cutoff(place, found)
+    if not cutoff:
+        return ""
+    goal_id = str((found.intent.get("props") or {}).get("goal_id") or "")
+    for intent in place.intents():
+        props = intent.get("props") or {}
+        if goal_id and str(props.get("goal_id") or "") != goal_id:
+            continue
+        question = place.node(_linked_question(props))
+        if question is None or question.get("status") != "answered":
+            continue
+        qprops = question.get("props") or {}
+        if str(qprops.get("answered_at") or "") != cutoff:
+            continue
+        return str(qprops.get("answer") or "").strip()
+    return ""
+
+
+def _linked_question(props: dict) -> str:
+    qid = props.get("question_id")
+    if isinstance(qid, str) and qid.startswith("question:"):
+        return qid
+    summary = str(props.get("summary") or "")
+    for token in summary.replace(".", " ").replace(",", " ").split():
+        if token.startswith("question:"):
+            return token
+    return ""
+
+
+def _note_suffix(note: str) -> str:
+    text = " ".join(note.split())
+    if not text:
+        return ""
+    return f" Person: {text}"
 
 
 def _target(place: Place, goal_id: str, found: _Record) -> tuple[dict | None, str | None]:

@@ -13,7 +13,7 @@ The place file is the shared state. `python -m prove next` names the one next ac
 4. `action` is `plan`: run `python -m prove plan`, then `next` again. Plan does not call Studio. It seeds a read and a verify from `claim.props.check`, and after a failed check it appends a write whose `inputs.source` is still empty.
 5. `action` is `run`: run `python -m prove run` on the local file. One intent. Then `next` again. `run` refuses `example.place.json`.
 6. `action` is `fill`: the JSON `source` field is the current script body from the local evidence file. Write the new body to a file and run `python -m prove fill <place> <intent> --file <body>`. Then `next` again. When `source` is null, there is no recorded body, so write the whole script.
-7. `action` is `answer`: ask the person. Record the reply with `python -m prove answer <place> <question> --text "..."`. Then `next` again. An open question blocks a write.
+7. `action` is `answer`: ask the person. Record the reply with `python -m prove answer <place> <question> --text "..."`. Then `next` again. An open question blocks a write. Answering the question from three identical failures rejects that blocked intent so the next `plan` can add one fix.
 8. `action` is `blocked` or `done`: stop and read `reason`. A missing script path lists observed `script` lines. Point the claim at one with `python -m prove bind <place> <claim> --script game.ServerScriptService.Hello`, or replace the check with `--probe` or `--contains`. Then run `plan` again. Any other `blocked` needs the person. `done` means no goal is open.
 9. Save the Roblox place only after the person asks. Use `agent.save()`. The runtime does not call it. Publishing stays a separate confirmation.
 
