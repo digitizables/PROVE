@@ -18,7 +18,7 @@ The sample evidence file is an illustration of the verify result. It is not a re
 
 ## With the runtime
 
-Copy the sample, then ask the runtime for one intent at a time. `status` on the checked-in sample is safe. `run` refuses `example.place.json`.
+Copy the sample, then ask the runtime for one intent at a time. `python -m prove next` on the copy names the action. `status` and `next` on the checked-in sample are safe. `run` refuses `example.place.json`.
 
 ```powershell
 Copy-Item graph/places/example.place.json graph/places/example.local.json

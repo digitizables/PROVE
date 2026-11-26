@@ -117,6 +117,35 @@ class PlanCase(unittest.TestCase):
             )
         return path
 
+    def attach_source(self, place: Place, source: str = "print('hello from the agent')\n") -> None:
+        intent_id = "intent:read-hello"
+        path = self.root / "intent-read-hello.json"
+        body = {
+            "schema": "prove.worker-result/1",
+            "intent_id": intent_id,
+            "evidence": {
+                "schema": "prove.evidence/1",
+                "id": evidence_id_for(intent_id),
+                "intent_id": intent_id,
+                "place_id": "example",
+                "worker": "script",
+                "captured_at": "2026-11-25T00:00:00Z",
+                "verdict": "inconclusive",
+                "summary": "Read HelloAgent.",
+                "observations": [
+                    {"kind": "script_path", "text": HELLO},
+                    {"kind": "source_sha256", "text": "abc"},
+                    {"kind": "source", "text": source},
+                ],
+                "artifacts": [],
+                "limits": "local",
+            },
+            "graph_patch": {"upsert_nodes": [], "upsert_edges": [], "set_status": []},
+            "follow_ups": [],
+        }
+        path.write_text(json.dumps(body), encoding="utf-8")
+        self.attach(place, intent_id, path, "inconclusive")
+
     def add_verify(self, place: Place, number: int, detail: str) -> None:
         intent_id = f"intent:verify-hello-{number}"
         place.nodes().append(
@@ -194,6 +223,7 @@ class PlanTests(PlanCase):
     def test_failed_check_adds_a_write_and_a_recheck(self) -> None:
         place = self.place()
         self.finish_verify(place, claim="contradicted")
+        self.attach_source(place)
         result = plan(place)
         saved = Place.load(place.path)
         write = next(intent for intent in saved.intents() if intent["props"]["action"] == "write_source")
@@ -208,6 +238,7 @@ class PlanTests(PlanCase):
         self.assertLessEqual(len(write["props"]["summary"]), 200)
         self.assertEqual(recheck["props"]["after"], write["id"])
         self.assertEqual(recheck["props"]["inputs"]["expect_contains"], ["hello from the agent"])
+        self.assertIsNone(saved.node("intent:read-output-contains-1"))
         self.assertEqual(saved.claims_checked_by(write["id"]), [])
         self.assertEqual(saved.claims_checked_by(recheck["id"]), ["claim:hello-prints"])
         self.assertEqual(saved.node("claim:hello-prints")["status"], "contradicted")
@@ -233,6 +264,54 @@ class PlanTests(PlanCase):
         self.assertEqual(write["props"]["after"], read["id"])
         self.assertEqual(recheck["props"]["after"], write["id"])
         self.assertEqual(saved.next_intent()["id"], read["id"])
+
+    def test_observed_script_without_local_source_is_read_before_the_write(self) -> None:
+        place = self.place()
+        self.finish_verify(place, claim="contradicted")
+        plan(place)
+        saved = Place.load(place.path)
+        read = saved.node("intent:read-output-contains-1")
+        write = saved.node("intent:fix-output-contains-1")
+        assert read is not None and write is not None
+        self.assertEqual(write["props"]["after"], read["id"])
+        self.assertEqual(saved.next_intent()["id"], read["id"])
+
+    def test_a_check_on_an_unverified_claim_seeds_read_then_verify(self) -> None:
+        place = self.place()
+        for intent in place.intents():
+            intent["status"] = "rejected"
+        claim = place.node("claim:hello-prints")
+        claim["props"]["goal_id"] = "goal:hello"
+        claim["props"]["check"] = {
+            "expect_contains": ["hello from the agent"],
+            "expect_absent": ["hello failed"],
+            "seconds": 3,
+        }
+        result = plan(place)
+        saved = Place.load(place.path)
+        proposed = [intent for intent in saved.intents() if intent["status"] == "proposed"]
+        self.assertEqual([intent["props"]["action"] for intent in proposed], ["read_source", "verify_output"])
+        self.assertEqual(proposed[1]["props"]["after"], proposed[0]["id"])
+        self.assertEqual(proposed[1]["props"]["inputs"]["expect_contains"], ["hello from the agent"])
+        self.assertEqual(saved.claims_checked_by(proposed[1]["id"]), ["claim:hello-prints"])
+        self.assertEqual(saved.claims_checked_by(proposed[0]["id"]), [])
+        self.assertIn("read_source", result.lines[0])
+        again = plan(saved)
+        self.assertFalse(again.changed)
+
+    def test_observed_script_with_local_source_seeds_only_the_verify(self) -> None:
+        place = self.place()
+        for intent in place.intents():
+            intent["status"] = "rejected"
+        place.node("script:hello")["status"] = "observed"
+        self.attach_source(place)
+        claim = place.node("claim:hello-prints")
+        claim["props"]["goal_id"] = "goal:hello"
+        claim["props"]["check"] = {"expect_contains": ["hello from the agent"]}
+        plan(place)
+        saved = Place.load(place.path)
+        proposed = [intent for intent in saved.intents() if intent["status"] == "proposed"]
+        self.assertEqual([intent["props"]["action"] for intent in proposed], ["verify_output"])
 
     def test_reset_replays_the_playtest_and_leaves_the_claim(self) -> None:
         place = self.place()

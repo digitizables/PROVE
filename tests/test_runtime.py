@@ -155,7 +155,7 @@ class VerdictTests(unittest.TestCase):
 
 
 class SessionTests(PlaceCase):
-    def test_read_records_the_hash_and_leaves_the_body_in_studio(self) -> None:
+    def test_read_records_the_hash_on_the_graph_and_the_body_in_the_run_file(self) -> None:
         place = self.place()
         agent = Reader(SENTINEL)
         result = run_intent(place, agent)
@@ -172,10 +172,43 @@ class SessionTests(PlaceCase):
         self.assertEqual(result["evidence"]["verdict"], "inconclusive")
         evidence_path = self.root / "evidence-runs" / "intent-read-hello.worker-result.json"
         text = evidence_path.read_text(encoding="utf-8")
-        self.assertNotIn(SENTINEL.strip(), text)
+        recorded = json.loads(text)
+        kinds = {item["kind"]: item["text"] for item in recorded["evidence"]["observations"]}
+        self.assertEqual(kinds["source"], SENTINEL)
+        self.assertEqual(kinds["script_path"], "game.ServerScriptService.HelloAgent")
+        self.assertEqual(kinds["source_sha256"], digest(SENTINEL))
         self.assertNotIn(SENTINEL.strip(), place.path.read_text(encoding="utf-8"))
-        self.assertEqual(json.loads(text)["schema"], "prove.worker-result/1")
+        self.assertEqual(recorded["schema"], "prove.worker-result/1")
         self.assertEqual(agent.reads, ["game.ServerScriptService.HelloAgent"])
+
+    def test_write_keeps_the_body_in_the_run_file_only(self) -> None:
+        place = self.place()
+        intent = place.node("intent:read-hello")
+        intent["props"]["action"] = "write_source"
+        intent["props"]["inputs"] = {
+            "path": "game.ServerScriptService.HelloAgent",
+            "source": SENTINEL,
+            "class_name": "Script",
+        }
+
+        class Writer:
+            def __init__(self) -> None:
+                self.scripts = self
+                self.written = None
+
+            def write(self, path: str, source: str, class_name: str = "auto") -> None:
+                self.written = (path, source, class_name)
+
+        writer = Writer()
+        run_intent(place, writer)
+        saved = Place.load(place.path)
+        self.assertEqual(writer.written, ("game.ServerScriptService.HelloAgent", SENTINEL, "Script"))
+        self.assertNotIn("source", saved.node("intent:read-hello")["props"]["inputs"])
+        self.assertNotIn(SENTINEL.strip(), saved.path.read_text(encoding="utf-8"))
+        self.assertEqual(saved.node("script:hello")["props"]["source_sha256"], digest(SENTINEL))
+        record = json.loads((self.root / "evidence-runs" / "intent-read-hello.worker-result.json").read_text(encoding="utf-8"))
+        kinds = {item["kind"]: item["text"] for item in record["evidence"]["observations"]}
+        self.assertEqual(kinds["source"], SENTINEL)
 
     def test_unsupported_action_does_not_activate(self) -> None:
         place = self.place()
@@ -392,7 +425,9 @@ class SessionTests(PlaceCase):
         self.assertEqual(seen["intent_id"], "intent:fix-hello")
         self.assertEqual(seen["probes"][0]["id"], "ready")
         evidence = next(node for node in result["graph_patch"]["upsert_nodes"] if node["type"] == "evidence")
-        self.assertNotIn("SENTINEL_WRITE", Path(evidence["props"]["path"]).read_text(encoding="utf-8"))
+        self.assertNotIn("source", saved.node("intent:fix-hello")["props"]["inputs"]["scripts"][0])
+        self.assertNotIn("SENTINEL_WRITE", saved.path.read_text(encoding="utf-8"))
+        self.assertIn("SENTINEL_WRITE", Path(evidence["props"]["path"]).read_text(encoding="utf-8"))
 
 
 class CliTests(PlaceCase):

@@ -36,10 +36,9 @@ place graph + open goal
 1. Read [AGENTS.md](AGENTS.md), then [skills/prove/SKILL.md](skills/prove/SKILL.md).
 2. Read the place file. The sample is [graph/places/example.place.json](graph/places/example.place.json). `python -m prove status` prints the next intent.
 3. If an intent has status `active`, finish that intent or stop. Leave a second intent at `proposed`.
-4. When no intent is ready, run `python -m prove plan` on a `*.local.json` copy. It appends the next intent and does not call Studio.
-5. For an action listed in [docs/runtime.md](docs/runtime.md), copy the place to a `*.local.json` file and run `python -m prove run` on the copy.
-6. Follow [docs/integration/roblox-studio-adapter.md](docs/integration/roblox-studio-adapter.md) before any Studio call the runtime does not cover.
-7. Write evidence under `evidence/runs/` on the machine. Commit the place graph when the person wants the model shared. Leave run files and `*.local.json` place files uncommitted.
+4. On a `*.local.json` copy, run `python -m prove next --json` and follow its `action`: `plan`, `run`, `fill`, or `answer`. `next` does not call Studio.
+5. Follow [docs/integration/roblox-studio-adapter.md](docs/integration/roblox-studio-adapter.md) before any Studio call the runtime does not cover.
+6. Write evidence under `evidence/runs/` on the machine. Commit the place graph when the person wants the model shared. Leave run files and `*.local.json` place files uncommitted. A committed place file should not still hold `inputs.source` on a done write.
 
 ## What a person does
 

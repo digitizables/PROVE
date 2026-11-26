@@ -14,7 +14,7 @@ The catalog in `catalog.md` is the list of adapter methods that worker may call.
 
 ## Hashes
 
-A script read sets `props.source_sha256` to the SHA-256 hex of `ScriptDocument.source` from `scripts.read`, encoded as UTF-8. That field is the script body. The adapter parser has already removed the line-number prefixes. The body is not written into the place file.
+A script read or write sets `props.source_sha256` to the SHA-256 hex of the source UTF-8. The adapter parser has already removed the line-number prefixes. The place file stores that hash and does not store the body. The worker-result file stores the body as observations `script_path`, `source_sha256`, and `source`. After a successful write, the intent on the place graph no longer has `inputs.source`.
 
 ## Errors from the adapter
 

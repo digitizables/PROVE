@@ -2,7 +2,7 @@
 
 Use this when a goal names a behavior Output, the tree, or a screenshot can decide.
 
-1. If the script or instance the check depends on is `unverified` or `stale`, activate a read intent first. `props.after` on the verify intent names that read.
+1. If the script or instance the check depends on is `unverified` or `stale`, or the script is `observed` but no local evidence file has its source text, activate a read intent first. `props.after` on the verify intent names that read. `python -m prove plan` appends that pair when the claim has `props.goal_id` and `props.check`.
 2. A write intent, when one is required, is its own intent. It runs in Edit. `must_not` lists the scripts and instances that stay untouched.
 3. The verify intent uses the `playtest` worker unless the question is a still or a motion. A still is `capture`. Motion, timing, stutter, or flicker is `capture` with `playtest.record`.
 4. `inputs` carries `seconds`, `expect_contains`, and `expect_absent`. `done_when` names the verdict that completes the intent.

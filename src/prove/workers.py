@@ -6,6 +6,7 @@ not run, are in workers/catalog.md.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 from typing import Any
 
@@ -14,6 +15,9 @@ from prove.records import envelope, evidence_node, worker_result
 from prove.verdict import verdict_from_studio
 
 _SCRIPT_CLASSES = {"Script", "LocalScript", "ModuleScript"}
+_SOURCE_LIMITS = (
+    "The place graph stores the hash. This local file stores the source text and stays uncommitted."
+)
 
 
 class NeedPerson(Exception):
@@ -31,7 +35,7 @@ def read_source(place: Place, agent: Any, intent: dict, stored_path: str) -> dic
         path,
         source,
         summary=f"Read {path}.",
-        limits="The script body stays in Studio. This record stores the source hash.",
+        limits=_SOURCE_LIMITS,
     )
 
 
@@ -39,17 +43,19 @@ def write_source(place: Place, agent: Any, intent: dict, stored_path: str) -> di
     path = _require(intent, "path")
     source = _require(intent, "source")
     class_name = (intent["props"].get("inputs") or {}).get("class_name", "auto")
-    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = _normalize(source)
     agent.scripts.write(path, normalized, class_name=class_name)
-    return _script_observation(
+    result = _script_observation(
         place,
         intent,
         stored_path,
         path,
         normalized,
         summary=f"Wrote {path}.",
-        limits="A write is not a playtest. Behavior stays unverified until a later intent.",
+        limits=_SOURCE_LIMITS + " A write is not a playtest. Behavior stays unverified until a later intent.",
     )
+    _drop_written_source(result, intent)
+    return result
 
 
 def verify_output(place: Place, agent: Any, intent: dict, stored_path: str) -> dict:
@@ -97,7 +103,12 @@ def change_and_verify(place: Place, agent: Any, intent: dict, stored_path: str) 
     for tree_path in raw.get("instances") or []:
         class_name = _class_for_instance(inputs.get("instances") or [], tree_path)
         extra.append(_instance_node(place, tree_path, class_name))
-    return _from_studio(place, intent, stored_path, raw["evidence"], worker="playtest", extra_nodes=extra)
+    result = _from_studio(place, intent, stored_path, raw["evidence"], worker="playtest", extra_nodes=extra)
+    for item in inputs.get("scripts") or []:
+        if isinstance(item, dict) and isinstance(item.get("path"), str) and isinstance(item.get("source"), str):
+            result["evidence"]["observations"].extend(source_observations(item["path"], _normalize(item["source"])))
+    _drop_written_source(result, intent)
+    return result
 
 
 def overview(place: Place, agent: Any, intent: dict, stored_path: str) -> dict:
@@ -141,6 +152,15 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def source_observations(path: str, source: str) -> list[dict]:
+    """Local evidence rows for one script body. The place graph stores the hash only."""
+    return [
+        {"kind": "script_path", "text": "game." + script_key(path)},
+        {"kind": "source_sha256", "text": sha256_text(source)},
+        {"kind": "source", "text": source},
+    ]
+
+
 def _script_observation(
     place: Place,
     intent: dict,
@@ -159,7 +179,7 @@ def _script_observation(
         verdict="inconclusive",
         summary=summary,
         limits=limits,
-        observations=[{"kind": "source_sha256", "text": digest}],
+        observations=source_observations(path, source),
     )
     nodes, edges, statuses = _settle(place, intent, evidence, stored_path)
     nodes.append(_script_node(place, path, digest))
@@ -246,6 +266,26 @@ def _require(intent: dict, key: str) -> str:
 
 def _normalize(source: str) -> str:
     return source.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _drop_written_source(result: dict, intent: dict) -> None:
+    """Remove script bodies from the intent stored on the place graph.
+
+    The worker-result file keeps the text. A later session reads it from there.
+    """
+    cleaned = copy.deepcopy(intent)
+    inputs = dict((cleaned.get("props") or {}).get("inputs") or {})
+    inputs.pop("source", None)
+    scripts = []
+    for item in inputs.get("scripts") or []:
+        if isinstance(item, dict):
+            item = dict(item)
+            item.pop("source", None)
+        scripts.append(item)
+    if "scripts" in inputs:
+        inputs["scripts"] = scripts
+    cleaned["props"]["inputs"] = inputs
+    result["graph_patch"]["upsert_nodes"].append(cleaned)
 
 
 def _script_node(place: Place, path: str, digest: str | None, *, class_name: str | None = None) -> dict:

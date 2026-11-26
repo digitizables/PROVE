@@ -14,6 +14,7 @@ from pathlib import Path
 from prove.graph import Place, script_key, slug
 from prove.records import evidence_id_for
 from prove.session import locate_root
+from prove.source import latest_source
 
 _VERIFY_ACTIONS = {"verify_output", "change_and_verify"}
 _SAMPLE = (
@@ -98,6 +99,10 @@ def _decide(place: Place) -> tuple[int, list[str]]:
     if missing:
         lines.append(missing[0])
         return 2, lines
+    seeded = _seed(place)
+    if seeded:
+        lines.extend(seeded)
+        return 0, lines
     lines.append("nothing to add")
     return 0, lines
 
@@ -162,7 +167,7 @@ def _append_fix(place: Place, goal: dict, found: _Record) -> list[str]:
         previous = look["id"]
         order += 1
         lines.append(f"added {look['id']} explore overview")
-    elif _needs_read(node):
+    elif _needs_read(node) or latest_source(place, path) is None:
         read = _intent(
             place,
             stem=f"intent:read-{slug(check_id)}",
@@ -335,22 +340,221 @@ def _target(place: Place, goal_id: str, found: _Record) -> tuple[dict | None, st
     return None, None
 
 
+def seed_block(place: Place) -> str | None:
+    """The path a plan cannot invent, or None when plan might still append an intent."""
+    if place.next_intent() is not None:
+        return None
+    if any(intent.get("status") == "blocked" for intent in place.intents()):
+        return None
+    notes: list[str] = []
+    for goal in place.nodes():
+        if goal.get("type") != "goal" or goal.get("status") != "open":
+            continue
+        claim = _seed_claim(place, goal["id"])
+        if claim is None:
+            continue
+        _node, path = _claim_script(place, claim)
+        if path is not None or not _done_overview(place, goal["id"]):
+            return None
+        notes.append(f"need script path for {claim['id']}")
+    return notes[0] if notes else None
+
+
+def _seed(place: Place) -> list[str] | None:
+    """Start a read and a verify for an open claim that has no playtest yet."""
+    notes: list[str] = []
+    for goal in place.nodes():
+        if goal.get("type") != "goal" or goal.get("status") != "open":
+            continue
+        claim = _seed_claim(place, goal["id"])
+        if claim is None:
+            continue
+        node, path = _claim_script(place, claim)
+        if path is None:
+            if _done_overview(place, goal["id"]):
+                notes.append(f"need script path for {claim['id']}")
+                continue
+            return notes + _append_seed_overview(place, goal, claim)
+        return notes + _append_seed_verify(place, goal, claim, node, path)
+    return notes or None
+
+
+def _seed_claim(place: Place, goal_id: str) -> dict | None:
+    for node in place.nodes():
+        if node.get("type") != "claim" or node.get("status") != "unverified":
+            continue
+        if (node.get("props") or {}).get("goal_id") != goal_id:
+            continue
+        if _check_inputs(node) is None or _claim_has_verify(place, node["id"]):
+            continue
+        return node
+    return None
+
+
+def _claim_has_verify(place: Place, claim_id: str) -> bool:
+    for intent in place.intents():
+        if intent.get("status") == "rejected" or not _is_verify(intent):
+            continue
+        if claim_id in place.claims_checked_by(intent["id"]):
+            return True
+    return False
+
+
+def _claim_script(place: Place, claim: dict) -> tuple[dict | None, str | None]:
+    raw = (claim.get("props") or {}).get("path")
+    if isinstance(raw, str) and raw.strip():
+        path = "game." + script_key(raw)
+        return place.find_script(path), path
+    for node in _linked_scripts(place, [claim["id"]]):
+        path = _node_path(node)
+        if path:
+            return node, path
+    return None, None
+
+
+def _check_inputs(claim: dict) -> dict | None:
+    check = (claim.get("props") or {}).get("check")
+    if not isinstance(check, dict):
+        return None
+    contains = _string_list(check.get("expect_contains"))
+    absent = _string_list(check.get("expect_absent"))
+    if contains is None or absent is None or (not contains and not absent):
+        return None
+    seconds = check.get("seconds", 3)
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
+        return None
+    inputs: dict = {
+        "seconds": int(seconds) if float(seconds).is_integer() else seconds,
+        "screenshot": bool(check.get("screenshot", False)),
+    }
+    if contains:
+        inputs["expect_contains"] = contains
+    if absent:
+        inputs["expect_absent"] = absent
+    if "forbid_errors" in check:
+        inputs["forbid_errors"] = bool(check["forbid_errors"])
+    if isinstance(check.get("probes"), list):
+        inputs["probes"] = copy.deepcopy(check["probes"])
+    return inputs
+
+
+def _string_list(value: object) -> list[str] | None:
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(not isinstance(item, str) or item.strip() == "" for item in value):
+        return None
+    return list(value)
+
+
+def _done_overview(place: Place, goal_id: str) -> bool:
+    for intent in _goal_intents(place, goal_id):
+        props = intent.get("props") or {}
+        if intent.get("status") == "done" and props.get("worker") == "explore" and props.get("action") == "overview":
+            return True
+    return False
+
+
+def _append_seed_overview(place: Place, goal: dict, claim: dict) -> list[str]:
+    look = _intent(
+        place,
+        stem=f"intent:look-{slug(claim['id'].removeprefix('claim:'))}",
+        name="Explore before the check",
+        goal_id=goal["id"],
+        worker="explore",
+        action="overview",
+        summary=_clip(f"No script path for {claim['id']}. Explore the place."),
+        inputs={},
+        done_when="Services and scripts from the explore are observed.",
+        must_not=["Write a script.", "Start a playtest.", "Save the place."],
+        after=None,
+        order=_next_order(place),
+    )
+    place.add_follow_ups([look])
+    return [f"added {look['id']} explore overview"]
+
+
+def _append_seed_verify(
+    place: Place,
+    goal: dict,
+    claim: dict,
+    node: dict | None,
+    path: str,
+) -> list[str]:
+    inputs = _check_inputs(claim) or {}
+    order = _next_order(place)
+    previous: str | None = None
+    batch: list[dict] = []
+    lines: list[str] = []
+    stem = slug(claim["id"].removeprefix("claim:"))
+    if _needs_read(node) or latest_source(place, path) is None:
+        read = _intent(
+            place,
+            stem=f"intent:read-{stem}",
+            name=f"Read {path.rsplit('.', 1)[-1]}",
+            goal_id=goal["id"],
+            worker="script",
+            action="read_source",
+            summary=_clip(f"Read {path} before checking {claim['id']}."),
+            inputs={"path": path},
+            done_when="The script status is observed and props.source_sha256 is set.",
+            must_not=["Write the script.", "Start a playtest.", "Save the place."],
+            after=None,
+            order=order,
+        )
+        batch.append(read)
+        previous = read["id"]
+        order += 1
+        lines.append(f"added {read['id']} script read_source")
+    needle = (inputs.get("expect_contains") or inputs.get("expect_absent") or [claim["id"]])[0]
+    verify = _intent(
+        place,
+        stem=f"intent:verify-{stem}",
+        name=f"Verify {claim.get('name') or claim['id']}",
+        goal_id=goal["id"],
+        worker="playtest",
+        action="verify_output",
+        summary=_clip(f"Playtest and check {claim['id']} for {needle}."),
+        inputs=inputs,
+        done_when=f"Evidence verdict is pass for {claim['id']}.",
+        must_not=["Edit any script.", "Save the place.", "Publish."],
+        after=previous,
+        order=order,
+    )
+    batch.append(verify)
+    place.add_follow_ups(batch)
+    _link_checks(place, verify["id"], [claim["id"]])
+    if previous:
+        lines.append(f"waiting {verify['id']} after {previous}")
+    else:
+        lines.append(f"added {verify['id']} playtest verify_output")
+    return lines
+
+
 def _linked_scripts(place: Place, claims: list[str]) -> list[dict]:
-    systems = {
+    targets = [
         edge.get("to")
         for edge in place.data["edges"]
         if edge.get("type") == "about" and edge.get("from") in claims
-    }
-    script_ids = [
-        edge.get("from")
-        for edge in place.data["edges"]
-        if edge.get("type") == "implements" and edge.get("to") in systems
     ]
+    systems = set()
     nodes = []
-    for script_id in script_ids:
-        node = place.node(str(script_id))
-        if node is not None and node.get("type") == "script":
+    seen: set[str] = set()
+    for target in targets:
+        node = place.node(str(target))
+        if node is None:
+            continue
+        if node.get("type") == "script" and node["id"] not in seen:
             nodes.append(node)
+            seen.add(node["id"])
+        elif node.get("type") == "system":
+            systems.add(node["id"])
+    for edge in place.data["edges"]:
+        if edge.get("type") != "implements" or edge.get("to") not in systems:
+            continue
+        node = place.node(str(edge.get("from")))
+        if node is not None and node.get("type") == "script" and node["id"] not in seen:
+            nodes.append(node)
+            seen.add(node["id"])
     return nodes
 
 

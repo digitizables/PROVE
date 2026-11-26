@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from prove.admit import SAMPLE, add_goal, answer_question, fill_source, init_place
+from prove.brief import brief, format_brief
 from prove.graph import Place, PlaceError
 from prove.planner import plan
 from prove.records import envelope, worker_result
@@ -30,14 +32,47 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     status = sub.add_parser("status", help="Show the active intent, the next intent, and open questions.")
     status.add_argument("place", help="Path to a prove.place/1 file")
+    nxt = sub.add_parser("next", help="Print the one next action. Does not call Studio.")
+    nxt.add_argument("place", help="Path to a prove.place/1 file")
+    nxt.add_argument("--json", action="store_true", help="Print the brief as JSON, including script source when filling.")
+    created = sub.add_parser("init", help="Create an empty place file. Does not call Studio.")
+    created.add_argument("place", help="Path to write. Use a *.local.json name.")
+    created.add_argument("--id", required=True, help="Place id stored in the file.")
+    created.add_argument("--title", required=True, help="Place title.")
+    created.add_argument("--display-name", required=True, help="Studio window name passed to name_contains.")
+    goal = sub.add_parser("goal", help="Add one goal and one claim. Does not call Studio.")
+    goal.add_argument("place", help="Path to a prove.place/1 file")
+    goal.add_argument("--statement", required=True, help="What the playtest has to show.")
+    goal.add_argument("--contains", action="append", default=[], help="Output text the playtest must contain. Repeatable.")
+    goal.add_argument("--absent", action="append", default=[], help="Output text the playtest must not contain. Repeatable.")
+    goal.add_argument("--script", help="Script path, such as game.ServerScriptService.Hello.")
+    goal.add_argument("--class-name", default="Script", help="Script class when --script creates a node.")
+    goal.add_argument("--seconds", type=float, default=3, help="Playtest length for the claim check.")
+    goal.add_argument("--name", help="Short goal name. Defaults to the statement.")
     planned = sub.add_parser("plan", help="Append the next intent from the latest evidence. Does not call Studio.")
     planned.add_argument("place", help="Path to a prove.place/1 file")
+    filled = sub.add_parser("fill", help="Set inputs.source on the ready write intent. Does not call Studio.")
+    filled.add_argument("place", help="Path to a prove.place/1 file")
+    filled.add_argument("intent", help="Id of the ready write_source intent.")
+    filled.add_argument("--file", required=True, help="UTF-8 file whose text becomes inputs.source.")
+    answered = sub.add_parser("answer", help="Record an answer on an open question. Does not call Studio.")
+    answered.add_argument("place", help="Path to a prove.place/1 file")
+    answered.add_argument("question", help="Id of the open question.")
+    answered.add_argument("--text", required=True, help="The person's answer.")
     run = sub.add_parser("run", help="Run the next ready intent against the open Studio window.")
     run.add_argument("place", help="Path to a prove.place/1 file")
     run.add_argument("--name", help="Studio window whose name contains this text. Overrides identity.display_name.")
     run.add_argument("--studio-id", help="Studio window id from list_roblox_studios.")
     run.add_argument("--json", action="store_true", help="Print the worker result JSON.")
     args = parser.parse_args(argv)
+    if args.command == "init":
+        try:
+            init_place(args.place, args.id, args.title, args.display_name)
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"created {args.place}")
+        return 0
     try:
         place = Place.load(args.place)
     except PlaceError as exc:
@@ -50,6 +85,17 @@ def main(argv: list[str] | None = None) -> int:
             print(exc, file=sys.stderr)
             return 2
         return 0
+    if args.command == "next":
+        try:
+            payload = brief(place)
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(format_brief(payload))
+        return 2 if payload.get("action") in {"answer", "blocked"} else 0
     if args.command == "plan":
         try:
             outcome = plan(place)
@@ -59,12 +105,48 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(outcome.lines))
         return outcome.code
     if Path(args.place).name == "example.place.json":
-        print(
-            "Copy this sample to graph/places/<id>.local.json and run that file. "
-            "The checked-in example stays unchanged.",
-            file=sys.stderr,
-        )
+        print(SAMPLE, file=sys.stderr)
         return 2
+    if args.command == "goal":
+        try:
+            lines = add_goal(
+                place,
+                statement=args.statement,
+                contains=args.contains,
+                absent=args.absent,
+                script=args.script,
+                class_name=args.class_name,
+                seconds=args.seconds,
+                name=args.name,
+            )
+            place.save()
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print("\n".join(lines))
+        return 0
+    if args.command == "fill":
+        try:
+            source = Path(args.file).read_text(encoding="utf-8")
+            fill_source(place, args.intent, source)
+            place.save()
+        except (OSError, UnicodeError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"filled {args.intent}")
+        return 0
+    if args.command == "answer":
+        try:
+            answer_question(place, args.question, args.text)
+            place.save()
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"answered {args.question}")
+        return 0
     try:
         result = run_studio(place, name=args.name, studio_id=args.studio_id)
     except UnsupportedIntent as exc:

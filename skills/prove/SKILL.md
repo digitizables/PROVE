@@ -5,16 +5,16 @@ description: Operate the PROVE place graph, planner, and evidence loop for Roblo
 
 # PROVE session
 
-Follow this order. Field lists, status words, adapter methods, and verdict rules have their own files. Use those files when a step names them.
+The place file is the shared state. `python -m prove next` names the one next action. Do not call Studio except through `run`. Do not invent a script body when `next` already returned one. Do not save or publish the Roblox place unless the person asks.
 
-1. Read the place file (`graph/places/<id>.local.json`, or `graph/places/example.place.json` for the sample).
-2. If some intent has status `active`, continue that intent. Leave every other intent `proposed`.
-3. If the goal can be decided more than one way, add a `question` node and ask the person. Wait for the answer before a write intent.
-4. When no intent is ready and the latest evidence is `fail` or `inconclusive`, run `python -m prove plan` on the local place file. Otherwise activate the earliest `proposed` intent whose `props.after` is null or names an intent already `done`. How to cut an intent is in `planner/README.md`.
-5. When `docs/runtime.md` lists that worker and action, copy the place to `graph/places/<id>.local.json` and run `python -m prove run` on the copy. That command locks the intent, calls the adapter, writes the worker result, and applies the patch. Skip the next two steps.
-6. Otherwise call only the adapter methods in that worker's row in `workers/catalog.md`. Open Studio with the rules in `docs/integration/roblox-studio-adapter.md`. Use adapter 0.1.2 or newer.
-7. Write one `prove.worker-result/1` file under `evidence/runs/`. Apply its `graph_patch` to the place file. Set the intent to `done` or `blocked` as the patch says. Apply the verdict rules in the integration doc before marking a claim `supported`.
-8. Leave `follow_ups` as new `proposed` intents. Run the next one only after this result is on the graph.
-9. Save the Roblox place only after the person asks. Use `agent.save()`. Publishing stays a separate confirmation through the adapter's high-risk cloud gate. The runtime does not call `agent.save()`.
+1. Use `graph/places/<id>.local.json` when it exists. Otherwise run `python -m prove init` on that path with the place id, title, and the Studio window's display name.
+2. Add a goal with `python -m prove goal`. `--contains` or `--absent` is the check a playtest can decide. Pass `--script` when you know the script path.
+3. Run `python -m prove next --json` on that file.
+4. `action` is `plan`: run `python -m prove plan`, then `next` again. Plan does not call Studio. It seeds a read and a verify from `claim.props.check`, and after a failed check it appends a write whose `inputs.source` is still empty.
+5. `action` is `run`: run `python -m prove run` on the local file. One intent. Then `next` again. `run` refuses `example.place.json`.
+6. `action` is `fill`: the JSON `source` field is the current script body from the local evidence file. Write the new body to a file and run `python -m prove fill <place> <intent> --file <body>`. Then `next` again. When `source` is null, there is no recorded body, so write the whole script.
+7. `action` is `answer`: ask the person. Record the reply with `python -m prove answer <place> <question> --text "..."`. Then `next` again. An open question blocks a write.
+8. `action` is `blocked` or `done`: stop and read `reason`. A missing script path means set `claim.props.path` to a `game.` script path, then run `plan` again. Any other `blocked` needs the person. `done` means no goal is open.
+9. Save the Roblox place only after the person asks. Use `agent.save()`. The runtime does not call it. Publishing stays a separate confirmation.
 
-Playbooks for the three common sessions: `docs/playbooks/explore-a-place.md`, `docs/playbooks/verify-a-change.md`, `docs/playbooks/iterate-on-failure.md`.
+Field lists live in `protocols/`. Status words live in `graph/README.md`. Verdicts live in `docs/integration/roblox-studio-adapter.md`. Playbooks live in `docs/playbooks/`. An action absent from `docs/runtime.md` is not started by `run`.

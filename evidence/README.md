@@ -14,6 +14,8 @@ When the worker ran a playtest, `evidence.studio` is `roblox-studio-adapter.evid
 
 `console` excerpts in the adapter record are already clipped. The place graph stores the summary, not the excerpt.
 
+A script read or write adds three observations: `script_path`, `source_sha256`, and `source`. `source` is the script body. It stays in this local file so the next session can fill a write without opening Studio. Do not commit a run file. The place graph keeps the hash and, after a successful write, drops `inputs.source` from the intent.
+
 ## Verdict
 
 The worker sets `evidence.verdict` with the table in `docs/integration/roblox-studio-adapter.md`. The evidence node's `status` is that same word. `graph_patch.set_status` is how the node and the intent change together.

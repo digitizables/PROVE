@@ -12,7 +12,7 @@ A live file for a real game is `places/<id>.local.json`. Those files are gitigno
 
 An evidence node stores `props.path` and `props.summary`. The path points at a `prove.worker-result/1` file. The body of the evidence stays in that file.
 
-Script source stays in Studio. A script node may store `props.source_sha256` after a read.
+A script node stores `props.source_sha256` after a read or a write. It does not store the source text. The local worker-result file for that read or write stores the text in `observations` (`script_path`, `source_sha256`, `source`). Run files stay uncommitted. A successful write removes `inputs.source` from the intent on the place graph. The run file still has the text.
 
 ## Status
 
@@ -55,6 +55,12 @@ The status word has to match the node type.
 | `contradicts` | evidence | claim |
 
 `checks` on an intent is the claim that intent is allowed to settle. `supports` and `contradicts` are written when the evidence verdict is `pass` or `fail`.
+
+## Claim check
+
+`claim.props.goal_id` names the goal that claim decides. `claim.props.check` is the playtest input the planner copies onto a `verify_output` intent: `expect_contains`, `expect_absent`, `seconds`, `screenshot`, `forbid_errors`, and `probes`. At least one of the two string lists is required. `claim.props.path` is the script that implements the claim. An `about` edge from the claim to that script, or to a system the script `implements`, is the same link.
+
+`python -m prove goal` writes those fields. `python -m prove plan` then appends the read and the verify. It does not invent a script body.
 
 ## Patch
 
