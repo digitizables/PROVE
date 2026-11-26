@@ -12,7 +12,7 @@ PROVE is a shared model plus a short loop. The model survives from one agent ses
 | Evidence | What Studio (or a graph read) actually returned | The run file is local. The graph keeps the pointer, the verdict, and a one-line summary |
 | Adapter | The Studio tool layer (`roblox-studio-adapter`) | Its process memory is the session `Context`. PROVE does not treat that memory as the place model |
 
-`src/` is reserved for a runtime that loads these files and calls the adapter. Until that exists, an agent is the runtime: it reads the files, calls the adapter, and writes the files back.
+`python -m prove` loads a place file, runs one ready intent through the adapter, and writes the graph back. `docs/runtime.md` lists the actions it implements. An action outside that list is a session the agent runs by hand from these files.
 
 ## What the graph is for
 

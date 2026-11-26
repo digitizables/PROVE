@@ -15,3 +15,16 @@ The open goal is `goal:hello`: on a solo playtest the server prints `hello from 
 If `studio.console.reset` is true, step 4 writes verdict `inconclusive` and the claim stays `unverified`. The failure playbook cuts the next playtest. If Output contains `hello failed`, verdict is `fail`, the claim is `contradicted`, and the next intent is one fix.
 
 The sample evidence file is an illustration of the verify result. It is not a recording from a live Studio session.
+
+## With the runtime
+
+Copy the sample, then ask the runtime for one intent at a time. `status` on the checked-in sample is safe. `run` refuses `example.place.json`.
+
+```powershell
+Copy-Item graph/places/example.place.json graph/places/example.local.json
+$env:PYTHONPATH = "src;..\roblox-studio-adapter\src"
+python -m prove status graph/places/example.local.json
+python -m prove run graph/places/example.local.json --name "The open place"
+```
+
+The first run reads HelloAgent and stores `source_sha256`. The second playtests. A pass supports `claim:hello-prints` and sets `goal:hello` to `done`. `--name` selects the Studio window and overrides `identity.display_name`. The runtime does not save the Roblox place.

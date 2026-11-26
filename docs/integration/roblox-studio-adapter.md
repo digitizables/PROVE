@@ -1,6 +1,6 @@
 # roblox-studio-adapter
 
-Workers talk to Studio through [roblox-studio-adapter](https://github.com/digitizables/roblox-studio-adapter) **0.1.1** or newer. On this machine the checkout is `../roblox-studio-adapter`. The adapter launches Studio's own `mcp.bat`. PROVE does not open a second MCP transport and does not prefix tool names with `Roblox_Studio__`.
+Workers talk to Studio through [roblox-studio-adapter](https://github.com/digitizables/roblox-studio-adapter) **0.1.2** or newer. On this machine the checkout is `../roblox-studio-adapter`. The adapter launches Studio's own `mcp.bat`. PROVE does not open a second MCP transport and does not prefix tool names with `Roblox_Studio__`. `python -m prove` is the runner for the actions in `docs/runtime.md`.
 
 The adapter's `docs/agent-playbook.md` is the authority for Studio behavior. If this file and that playbook disagree about a tool, the playbook and the adapter code win. This file is the PROVE boundary: which calls are allowed, how a result becomes evidence, and when to stop for a person.
 
@@ -24,7 +24,7 @@ with RobloxStudio.connect(name_contains=display_name) as agent:
     )
 ```
 
-- `connect()` raises `AmbiguousStudioError` when several windows are open and the selector matches none or more than one. Mark the intent `blocked` and ask the person. The place file stores `identity.display_name`, `place_id`, or `file_name`. It does not store `studio_id`. That id changes when Studio restarts. The evidence record may store it because the run file stays local.
+- `connect()` raises `AmbiguousStudioError` when several windows are open and the selector matches none or more than one. Mark the intent `blocked` and ask the person. As of adapter 0.1.3, `connect()` closes the MCP process it started when that selection fails. The place file stores `identity.display_name`, `place_id`, or `file_name`. It does not store `studio_id`. That id changes when Studio restarts. The evidence record may store it because the run file stays local.
 - One `RobloxStudio` is one thread and one in-flight call. A second worker is a second connection.
 - `agent.context.brief()` is session memory for the model. The place graph is the memory that survives the process.
 - `agent.loop.change_and_verify(..., intent_id=intent_id)` returns `result["evidence"]` already filled in. `result["playtest"]` is still a Python `PlaytestReport`. Persist the evidence dict.
@@ -42,8 +42,11 @@ Named checks:
 | `output.error_free` | The console delta had no error lines. Present when `forbid_errors` is true |
 | `output.contains.N` | The delta contained `expect_contains[N]` |
 | `output.absent.N` | The delta omitted `expect_absent[N]` |
+| `probe.<id>` | A Server or Client Luau expression ran before stop. It fails when the query errors or `equals` does not match |
 
-`passed` null means the run was an observation (`forbid_errors` false and both lists empty).
+Probes run while that play copy still exists. A probe datamodel of `Edit` is rejected before play starts. The evidence record stores each probe as `id`, `datamodel`, `ok`, `value`, and `error`.
+
+`passed` is null when `forbid_errors` is false, both needle lists are empty, and no probe was requested.
 
 `playtest.record` returns `status` (`completed`, `partial`, or `unknown`), `recording_id`, artifact paths, and warnings. Use it when the question is motion, timing, stutter, or flicker. A still question uses `capture.screenshot`. `partial` means the capture ended early.
 
@@ -54,11 +57,12 @@ Apply these when writing `prove.evidence/1.verdict`. The claim status changes on
 | Situation | Verdict |
 | --- | --- |
 | `studio.passed` is true and `studio.console.reset` is false | `pass` |
-| `studio.passed` is false | `fail` |
+| `studio.passed` is false and `studio.console.reset` is false | `fail` |
 | `studio.passed` is null | `inconclusive` |
-| `studio.console.reset` is true | `inconclusive`, including when `passed` is true. The checks saw the whole later log |
-| The worker needs the person (`AmbiguousStudioError`, `NeedsUserAction`, `PermissionDenied`, high-risk confirmation) | `blocked` |
-| A mutation raised `AmbiguousOutcome` or a mutation `TimeoutError` | `inconclusive`. The edit may already be in the place |
+| `studio.console.reset` is true | `inconclusive`, including when `passed` is true or false. The checks saw the whole later log |
+| The worker needs the person (`AmbiguousStudioError`, `NoStudioError`, `NeedsUserAction`, `PermissionDenied`, high-risk confirmation) | `blocked` |
+| A mutation raised `AmbiguousOutcome` or a mutation `TimeoutError` | `inconclusive`. The edit may already be in the place. The runtime proposes a read before any rewrite |
+| `ToolFailed`, `ModeError`, or `UnyieldingLuau` | `fail` |
 
 A `pass` may set the claim the intent checks to `supported`. A `fail` may set it to `contradicted`. `inconclusive` and `blocked` leave the claim status as it was.
 
@@ -74,10 +78,8 @@ A `pass` may set the claim the intent checks to `supported`. A `fail` may set it
 
 ## Adapter follow-ups
 
-These would strengthen the next evidence loop. They are not in 0.1.1.
+Adapter 0.1.2 stores playtest probes on the evidence record. The runtime records `AmbiguousOutcome` and a mutation `TimeoutError` as `inconclusive` and proposes a read intent.
 
-1. An evidence kind for `AmbiguousOutcome` that records the tool name and tells the next intent to read before any rewrite.
-2. Playtest probes: Luau expressions run on Server and on Client before `run` stops, stored on the same evidence record. Today a worker that needs both copies has to call them itself, and stop then deletes the runtime DataModel.
-3. A tighter error classification. `output.error_free` is a heuristic over Output text. A goal that cares about one message should pass that message in `expect_contains` or `expect_absent`.
+What remains is a tighter error classification. `output.error_free` is a heuristic over Output text. A goal that cares about one message should pass that message in `expect_contains` or `expect_absent`.
 
 Solo play is a Studio MCP limit (`start_stop_play`). Team Test and multi-client sessions are outside the adapter until Studio exposes them.

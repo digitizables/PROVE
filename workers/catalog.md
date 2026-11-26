@@ -4,10 +4,12 @@ Each row is the adapter surface for that worker. Session setup (`RobloxStudio.co
 
 Paths, play mode, and save rules are in that integration doc. This table is only the method list.
 
+The runtime executes five actions: `explore` `overview`, `script` `read_source`, `script` `write_source`, `playtest` `verify_output`, and `playtest` `change_and_verify`. `docs/runtime.md` is that command list. `read_source`, `write_source`, and `change_and_verify` set `source_sha256`. `overview` marks a script `observed` and leaves an existing hash as it is.
+
 | Worker | Adapter methods | Writes the place? |
 | --- | --- | --- |
-| `explore` | `studios`, `playtest.state`, `loop.explore`, `datamodel.overview`, `datamodel.tree`, `datamodel.walk`, `datamodel.inspect`, `scripts.find` | Service and script nodes from what those calls returned. No `source_sha256` yet |
-| `script` | `scripts.find`, `scripts.grep`, `scripts.read`, `scripts.write`, `scripts.replace` | `source_sha256` on read. A write intent names the path in `inputs` |
+| `explore` | `studios`, `playtest.state`, `loop.explore`, `datamodel.overview`, `datamodel.tree`, `datamodel.walk`, `datamodel.inspect`, `scripts.find` | Service and script nodes from what those calls returned. An existing `source_sha256` stays. `overview` does not add one |
+| `script` | `scripts.find`, `scripts.grep`, `scripts.read`, `scripts.write`, `scripts.replace` | `source_sha256` on read and on write. A write intent names the path in `inputs` |
 | `datamodel` | `datamodel.inspect`, `datamodel.read_properties`, `datamodel.apply`, `datamodel.destroy` | Instance nodes for paths it created or deleted. `apply` does not set `Source` |
 | `luau` | `luau.query`, `luau.run` | Observations in the evidence file. A query result can set a property on a node the intent names |
 | `playtest` | `playtest.state`, `playtest.run`, `playtest.console`, `evidence_record` | The evidence node. `run` stops play when `stop` is true (the default) |

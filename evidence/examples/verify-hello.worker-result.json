@@ -49,6 +49,7 @@
           "detail": "output omitted 'hello failed'"
         }
       ],
+      "probes": [],
       "play": {
         "mode_before": "Edit",
         "mode_after": "Edit",

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prove"
+version = "0.1.0"
+description = "Run one PROVE intent against Roblox Studio and write the evidence back onto the place graph."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Paul Beck", email = "digitizables@mailbox.org" }]
+keywords = ["roblox", "roblox-studio", "prove"]
+
+[project.urls]
+Homepage = "https://github.com/digitizables/PROVE"
+Repository = "https://github.com/digitizables/PROVE"
+
+[project.scripts]
+prove = "prove.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
