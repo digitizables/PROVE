@@ -1,6 +1,6 @@
 # Runtime
 
-`python -m prove next` tells an agent the one next action. `run` locks one ready intent, calls the adapter, writes a worker result, and applies the graph patch. `plan` appends the next intent from the graph and the latest evidence. `init`, `goal`, `bind`, `plan`, `fill`, `answer`, and `next` do not call Studio.
+`python -m prove next` tells an agent the one next action. `run` locks one ready intent, calls the adapter, writes a worker result, and applies the graph patch. `plan` appends the next intent from the graph and the latest evidence. `init`, `goal`, `bind`, `plan`, `fill`, `answer`, `next`, and `ui` do not call Studio.
 
 The verdict rules stay in `docs/integration/roblox-studio-adapter.md`. This file is the command and the actions the package implements.
 
@@ -106,3 +106,7 @@ An unexpected error leaves the intent `active`. The next `run` continues that in
 `answer` sets the question to `answered` and stores `props.answer`.
 
 `example.place.json` can be read by `status`, `next`, and a plan that changes nothing. `init`, `goal`, `bind`, `fill`, `answer`, `run`, and a plan that would edit it exit 2 and leave the file unchanged.
+
+## Place board
+
+`python -m prove ui` serves `http://127.0.0.1:8765/` on this machine. The page reads `graph/places/*.json`. It lists the next action, the claims, and each intent's evidence summary. It omits observations of kind `source`. Goal, bind, plan, and answer on the page call the same functions as the command line and save the place file. The page does not run an intent and does not call Studio. `--no-browser` skips opening a window. `--port` changes the port. The process listens on `127.0.0.1` only.

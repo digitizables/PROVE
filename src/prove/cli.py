@@ -32,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     status = sub.add_parser("status", help="Show the active intent, the next intent, and open questions.")
     status.add_argument("place", help="Path to a prove.place/1 file")
+    board = sub.add_parser("ui", help="Open the local place board. Does not call Studio.")
+    board.add_argument("--host", default="127.0.0.1", help="Loopback address. Default 127.0.0.1.")
+    board.add_argument("--port", type=int, default=8765, help="Port. Default 8765.")
+    board.add_argument("--no-browser", action="store_true", help="Do not open a browser window.")
     nxt = sub.add_parser("next", help="Print the one next action. Does not call Studio.")
     nxt.add_argument("place", help="Path to a prove.place/1 file")
     nxt.add_argument("--json", action="store_true", help="Print the brief as JSON, including script source when filling.")
@@ -77,6 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--studio-id", help="Studio window id from list_roblox_studios.")
     run.add_argument("--json", action="store_true", help="Print the worker result JSON.")
     args = parser.parse_args(argv)
+    if args.command == "ui":
+        from prove.ui import run_ui
+
+        try:
+            run_ui(args.host, args.port, open_browser=not args.no_browser)
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        return 0
     if args.command == "init":
         try:
             init_place(args.place, args.id, args.title, args.display_name)

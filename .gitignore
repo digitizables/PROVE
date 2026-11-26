@@ -10,8 +10,9 @@ venv/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
+web/node_modules/
 
 # Local place files and captured evidence stay on the machine.
 *.rbxl

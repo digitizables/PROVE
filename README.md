@@ -40,6 +40,12 @@ place graph + open goal
 5. Follow [docs/integration/roblox-studio-adapter.md](docs/integration/roblox-studio-adapter.md) before any Studio call the runtime does not cover.
 6. Write evidence under `evidence/runs/` on the machine. Commit the place graph when the person wants the model shared. Leave run files and `*.local.json` place files uncommitted. A committed place file should not still hold `inputs.source` on a done write.
 
+## Place board
+
+`python -m prove ui` opens a local page at `http://127.0.0.1:8765/`. It shows one place file: the next action, the claims, and the evidence summaries. Goal, bind, plan, and answer save the place file. Run stays in the terminal. The page does not call Studio, and it does not show script bodies.
+
+The page is the Svelte app in `web/`. `npm run build` there writes `web/static`, which `ui` serves. `npm run dev` proxies `/api` to port 8765.
+
 ## What a person does
 
 - Names the goal in language a playtest or a read can decide.
@@ -54,6 +60,7 @@ AGENTS.md                         entry for an agent session
 skills/prove/SKILL.md             session checklist
 docs/architecture.md              why the pieces exist
 docs/runtime.md                   python -m prove: command, exit codes, actions
+web/                              local place board (Svelte)
 docs/integration/                 adapter boundary, verdicts, safety
 docs/playbooks/                   explore, verify, iterate
 protocols/                        JSON Schemas (the field lists)
