@@ -58,9 +58,9 @@ The status word has to match the node type.
 
 ## Claim check
 
-`claim.props.goal_id` names the goal that claim decides. `claim.props.check` is the playtest input the planner copies onto a `verify_output` intent: `expect_contains`, `expect_absent`, `seconds`, `screenshot`, `forbid_errors`, and `probes`. At least one of the two string lists is required. `claim.props.path` is the script that implements the claim. An `about` edge from the claim to that script, or to a system the script `implements`, is the same link.
+`claim.props.goal_id` names the goal that claim decides. `claim.props.check` is the playtest input the planner copies onto a `verify_output` intent: `expect_contains`, `expect_absent`, `seconds`, `screenshot`, `forbid_errors`, and `probes`. A check needs one of `expect_contains`, `expect_absent`, or `probes`. `claim.props.path` is the script that implements the claim. An `about` edge from the claim to that script, or to a system the script `implements`, is the same link.
 
-`python -m prove goal` writes those fields. `python -m prove plan` then appends the read and the verify. It does not invent a script body.
+`python -m prove goal` writes those fields. `python -m prove bind` sets `claim.props.path` and replaces `claim.props.check` without a Studio call. `python -m prove plan` then appends the read and the verify. It does not invent a script body.
 
 ## Patch
 

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from prove.admit import SAMPLE, add_goal, answer_question, fill_source, init_place
+from prove.admit import SAMPLE, add_goal, answer_question, bind_claim, fill_source, init_place
 from prove.brief import brief, format_brief
 from prove.graph import Place, PlaceError
 from prove.planner import plan
@@ -45,10 +45,22 @@ def main(argv: list[str] | None = None) -> int:
     goal.add_argument("--statement", required=True, help="What the playtest has to show.")
     goal.add_argument("--contains", action="append", default=[], help="Output text the playtest must contain. Repeatable.")
     goal.add_argument("--absent", action="append", default=[], help="Output text the playtest must not contain. Repeatable.")
+    goal.add_argument("--probe", action="append", default=[], help="JSON probe object with id, expression, and datamodel. Repeatable.")
     goal.add_argument("--script", help="Script path, such as game.ServerScriptService.Hello.")
     goal.add_argument("--class-name", default="Script", help="Script class when --script creates a node.")
     goal.add_argument("--seconds", type=float, default=3, help="Playtest length for the claim check.")
     goal.add_argument("--name", help="Short goal name. Defaults to the statement.")
+    _add_error_flags(goal)
+    bound = sub.add_parser("bind", help="Point a claim at a script or replace its check. Does not call Studio.")
+    bound.add_argument("place", help="Path to a prove.place/1 file")
+    bound.add_argument("claim", help="Id of the claim to update.")
+    bound.add_argument("--script", help="Script path, such as game.ServerScriptService.Hello.")
+    bound.add_argument("--class-name", default="Script", help="Script class when --script creates a node.")
+    bound.add_argument("--contains", action="append", default=[], help="Replace expect_contains. Clears probes unless --probe is also set.")
+    bound.add_argument("--absent", action="append", default=[], help="Replace expect_absent. Repeatable.")
+    bound.add_argument("--probe", action="append", default=[], help="Replace probes. Clears output needles unless those flags are also set.")
+    bound.add_argument("--seconds", type=float, help="Playtest length. Omit to keep the current value.")
+    _add_error_flags(bound)
     planned = sub.add_parser("plan", help="Append the next intent from the latest evidence. Does not call Studio.")
     planned.add_argument("place", help="Path to a prove.place/1 file")
     filled = sub.add_parser("fill", help="Set inputs.source on the ready write intent. Does not call Studio.")
@@ -118,6 +130,27 @@ def main(argv: list[str] | None = None) -> int:
                 class_name=args.class_name,
                 seconds=args.seconds,
                 name=args.name,
+                probes=_parse_probes(args.probe),
+                forbid_errors=_forbid_errors(args),
+            )
+            place.save()
+        except PlaceError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print("\n".join(lines))
+        return 0
+    if args.command == "bind":
+        try:
+            lines = bind_claim(
+                place,
+                args.claim,
+                script=args.script,
+                class_name=args.class_name,
+                contains=args.contains or None,
+                absent=args.absent or None,
+                probes=_parse_probes(args.probe),
+                seconds=args.seconds,
+                forbid_errors=_forbid_errors(args),
             )
             place.save()
         except PlaceError as exc:
@@ -172,6 +205,35 @@ def main(argv: list[str] | None = None) -> int:
     if verdict == "fail":
         return 1
     return 2
+
+
+def _add_error_flags(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--forbid-errors", action="store_true", help="Fail the playtest when Output has an error.")
+    group.add_argument("--allow-errors", action="store_true", help="Ignore Output errors. Probe-only checks do this unless --forbid-errors is set.")
+
+
+def _forbid_errors(args: argparse.Namespace) -> bool | None:
+    if args.forbid_errors:
+        return True
+    if args.allow_errors:
+        return False
+    return None
+
+
+def _parse_probes(raw: list[str] | None) -> list[dict] | None:
+    if not raw:
+        return None
+    probes = []
+    for text in raw:
+        try:
+            item = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise PlaceError(f"Probe is not JSON: {exc}") from exc
+        if not isinstance(item, dict):
+            raise PlaceError("A probe is a JSON object")
+        probes.append(item)
+    return probes
 
 
 def format_status(place: Place) -> str:

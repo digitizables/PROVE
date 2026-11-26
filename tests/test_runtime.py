@@ -105,6 +105,29 @@ class Player:
         return self.report
 
 
+class Playing:
+    def __init__(self, report: PlaytestReport, *, playing: bool) -> None:
+        self.session = SimpleNamespace(studio_id="studio-1")
+        self.playtest = self
+        self.report = report
+        self.playing = playing
+        self.calls: list[str] = []
+        self.kwargs = None
+
+    def state(self):
+        self.calls.append("state")
+        return SimpleNamespace(playing=self.playing)
+
+    def stop(self):
+        self.calls.append("stop")
+        self.playing = False
+
+    def run(self, **kwargs):
+        self.calls.append("run")
+        self.kwargs = kwargs
+        return self.report
+
+
 class GraphTests(PlaceCase):
     def test_example_runs_the_read_before_the_playtest(self) -> None:
         place = self.place()
@@ -294,6 +317,21 @@ class SessionTests(PlaceCase):
                     self.assertEqual(saved.node("goal:hello")["status"], "open")
                 else:
                     self.assertIn(relation, edge_types)
+
+    def test_verify_stops_a_play_already_in_progress(self) -> None:
+        place = self.place("playing.local.json")
+        place.node("intent:read-hello")["status"] = "done"
+        agent = Playing(play_report(passed=True), playing=True)
+        result = run_intent(place, agent)
+        self.assertEqual(agent.calls, ["state", "stop", "run"])
+        self.assertEqual(result["evidence"]["verdict"], "pass")
+
+    def test_verify_leaves_a_stopped_studio_alone(self) -> None:
+        place = self.place("stopped.local.json")
+        place.node("intent:read-hello")["status"] = "done"
+        agent = Playing(play_report(passed=True), playing=False)
+        run_intent(place, agent)
+        self.assertEqual(agent.calls, ["state", "run"])
 
     def test_read_then_pass_closes_the_goal(self) -> None:
         place = self.place()

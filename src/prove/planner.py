@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from prove.graph import Place, script_key, slug
+from prove.graph import Place, PlaceError, script_key, slug
 from prove.records import evidence_id_for
 from prove.session import locate_root
 from prove.source import latest_source
@@ -412,13 +412,16 @@ def _claim_script(place: Place, claim: dict) -> tuple[dict | None, str | None]:
     return None, None
 
 
-def _check_inputs(claim: dict) -> dict | None:
-    check = (claim.get("props") or {}).get("check")
+def playtest_inputs(check: object) -> dict | None:
+    """Copy a claim check into playtest inputs. A probe list is enough."""
     if not isinstance(check, dict):
         return None
     contains = _string_list(check.get("expect_contains"))
     absent = _string_list(check.get("expect_absent"))
-    if contains is None or absent is None or (not contains and not absent):
+    probes = _probe_copies(check.get("probes"))
+    if contains is None or absent is None or probes is None:
+        return None
+    if not contains and not absent and not probes:
         return None
     seconds = check.get("seconds", 3)
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
@@ -433,9 +436,83 @@ def _check_inputs(claim: dict) -> dict | None:
         inputs["expect_absent"] = absent
     if "forbid_errors" in check:
         inputs["forbid_errors"] = bool(check["forbid_errors"])
-    if isinstance(check.get("probes"), list):
-        inputs["probes"] = copy.deepcopy(check["probes"])
+    if probes:
+        inputs["probes"] = probes
     return inputs
+
+
+def play_summary(claim_id: str, inputs: dict) -> str:
+    """One-line verify summary. The needle is a probe id when the check has no output text."""
+    return _clip(f"Playtest and check {claim_id} for {_needle(inputs, claim_id)}.")
+
+
+def queue_read(
+    place: Place,
+    *,
+    goal_id: str,
+    claim_id: str,
+    path: str,
+    node: dict | None,
+) -> tuple[dict | None, bool]:
+    """The proposed read that should precede a verify, and whether this call created it.
+
+    Returns ``(None, False)`` when the script is already observed and a local
+    evidence file has its source.
+    """
+    if not _needs_read(node) and latest_source(place, path) is not None:
+        return None, False
+    key = script_key(path)
+    for intent in place.intents():
+        if intent.get("status") != "proposed":
+            continue
+        props = intent.get("props") or {}
+        if props.get("worker") != "script" or props.get("action") != "read_source":
+            continue
+        inputs = props.get("inputs") or {}
+        if script_key(str(inputs.get("path") or "")) == key:
+            return intent, False
+    if place.node(goal_id) is None:
+        raise PlaceError(f"{claim_id} has no goal")
+    read = _intent(
+        place,
+        stem=f"intent:read-{slug(claim_id.removeprefix('claim:'))}",
+        name=f"Read {path.rsplit('.', 1)[-1]}",
+        goal_id=goal_id,
+        worker="script",
+        action="read_source",
+        summary=_clip(f"Read {path} before checking {claim_id}."),
+        inputs={"path": path},
+        done_when="The script status is observed and props.source_sha256 is set.",
+        must_not=["Write the script.", "Start a playtest.", "Save the place."],
+        after=None,
+        order=_next_order(place),
+    )
+    place.add_follow_ups([read])
+    return read, True
+
+
+def _check_inputs(claim: dict) -> dict | None:
+    return playtest_inputs((claim.get("props") or {}).get("check"))
+
+
+def _probe_copies(value: object) -> list | None:
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        return None
+    return copy.deepcopy(value)
+
+
+def _needle(inputs: dict, fallback: str) -> str:
+    found = inputs.get("expect_contains") or inputs.get("expect_absent") or []
+    if isinstance(found, list) and found:
+        return str(found[0])
+    probes = inputs.get("probes") or []
+    if isinstance(probes, list) and probes and isinstance(probes[0], dict):
+        probe_id = probes[0].get("id")
+        if isinstance(probe_id, str) and probe_id:
+            return probe_id
+    return fallback
 
 
 def _string_list(value: object) -> list[str] | None:
@@ -505,7 +582,6 @@ def _append_seed_verify(
         previous = read["id"]
         order += 1
         lines.append(f"added {read['id']} script read_source")
-    needle = (inputs.get("expect_contains") or inputs.get("expect_absent") or [claim["id"]])[0]
     verify = _intent(
         place,
         stem=f"intent:verify-{stem}",
@@ -513,7 +589,7 @@ def _append_seed_verify(
         goal_id=goal["id"],
         worker="playtest",
         action="verify_output",
-        summary=_clip(f"Playtest and check {claim['id']} for {needle}."),
+        summary=play_summary(claim["id"], inputs),
         inputs=inputs,
         done_when=f"Evidence verdict is pass for {claim['id']}.",
         must_not=["Edit any script.", "Save the place.", "Publish."],

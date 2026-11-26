@@ -1,6 +1,6 @@
 # Runtime
 
-`python -m prove next` tells an agent the one next action. `run` locks one ready intent, calls the adapter, writes a worker result, and applies the graph patch. `plan` appends the next intent from the graph and the latest evidence. `init`, `goal`, `plan`, `fill`, `answer`, and `next` do not call Studio.
+`python -m prove next` tells an agent the one next action. `run` locks one ready intent, calls the adapter, writes a worker result, and applies the graph patch. `plan` appends the next intent from the graph and the latest evidence. `init`, `goal`, `bind`, `plan`, `fill`, `answer`, and `next` do not call Studio.
 
 The verdict rules stay in `docs/integration/roblox-studio-adapter.md`. This file is the command and the actions the package implements.
 
@@ -46,7 +46,7 @@ The runtime does not call `agent.save()`. It does not publish.
 | --- | --- | --- | --- |
 | `script` | `read_source` | `scripts.read` | Script `observed`, `source_sha256` of the source UTF-8, verdict `inconclusive` |
 | `script` | `write_source` | `scripts.write` | Same hash, taken from the text that was written |
-| `playtest` | `verify_output` | `playtest.run` | Verdict from the studio record. `inputs.probes` are passed through |
+| `playtest` | `verify_output` | `playtest.stop` when a play is already running, then `playtest.run` | Verdict from the studio record. `inputs.probes` are passed through. Stopping first gives this intent its own console delta |
 | `playtest` | `change_and_verify` | `loop.change_and_verify` | The studio record on `result["evidence"]`, script hashes, instance nodes |
 | `explore` | `overview` | `loop.explore` | Services and scripts `observed`. An existing `source_sha256` stays. A new script has no hash |
 
@@ -60,7 +60,7 @@ Any other worker or action raises before the intent is activated and before Stud
 
 A ready or active intent is left for `run`. A readback from `AmbiguousOutcome` stays the next intent. An existing `blocked` intent stops planning.
 
-An unverified claim with `props.goal_id` and `props.check`, and no verify yet, gets a `verify_output` copied from that check. An unverified, stale, or source-less script is read first.
+An unverified claim with `props.goal_id` and `props.check`, and no verify yet, gets a `verify_output` copied from that check. The check needs `expect_contains`, `expect_absent`, or `probes`. An unverified, stale, or source-less script is read first.
 
 `console.reset` adds one `verify_output` with the same playtest inputs. The claim status stays as it is.
 
@@ -92,15 +92,17 @@ An unexpected error leaves the intent `active`. The next `run` continues that in
 | `fill` | 0 | Write the new script body and `python -m prove fill <place> <intent> --file <body>`. `source` in the JSON is the current body |
 | `plan` | 0 | `python -m prove plan`. An open goal still has no ready intent |
 | `answer` | 2 | Ask the person, then `python -m prove answer <place> <question> --text "..."`. A blocked intent, or an open question in front of a write |
-| `blocked` | 2 | Stop. The runtime cannot run this intent, a required input other than source is missing, or the goal still has no script path after an overview |
+| `blocked` | 2 | Stop. The runtime cannot run this intent, a required input other than source is missing, or the goal still has no script path after an overview. A missing script path lists observed `script` lines |
 | `done` | 0 | No open goal and no ready intent |
 
 `init <place> --id --title --display-name` creates an empty place file. `display-name` is what a later `run` passes to `name_contains` when `--name` is absent.
 
-`goal <place> --statement --contains TEXT` adds one open goal and one unverified claim. Repeat `--contains` or add `--absent`. `--script game.ServerScriptService.Hello` links the claim to that script and creates the script node when it is missing. `--name` is the short label. Plan turns the claim into a read and a verify. Goal does not invent script source.
+`goal <place> --statement --contains TEXT` adds one open goal and one unverified claim. Repeat `--contains`, add `--absent`, or pass `--probe` with a JSON object `{"id", "expression", "datamodel"}`. `datamodel` is `Server` or `Client`. `equals` keeps its JSON type. A probe-only check sets `forbid_errors` false unless `--forbid-errors` is passed, so unrelated Output does not become a failed check. `--script game.ServerScriptService.Hello` links the claim to that script and creates the script node when it is missing. `--name` is the short label. Plan turns the claim into a read and a verify. Goal does not invent script source.
+
+`bind <place> <claim>` sets `claim.props.path`, replaces `claim.props.check`, or both. `--contains` replaces `expect_contains` and clears `probes` unless `--probe` is also set. `--probe` replaces `probes` and clears the output needles unless those flags are also set. A proposed verify that checks the claim takes the new inputs. When the script is unverified, stale, or has no local source, bind inserts a `read_source` and points that verify at it. A finished verify stays as it is, and a later `plan` does not seed a second one. Bind does not invent script source.
 
 `fill` sets `inputs.source` on the ready `write_source` intent and saves. The intent stays `proposed`. An open question refuses the fill. An empty file refuses the fill.
 
 `answer` sets the question to `answered` and stores `props.answer`.
 
-`example.place.json` can be read by `status`, `next`, and a plan that changes nothing. `init`, `goal`, `fill`, `answer`, `run`, and a plan that would edit it exit 2 and leave the file unchanged.
+`example.place.json` can be read by `status`, `next`, and a plan that changes nothing. `init`, `goal`, `bind`, `fill`, `answer`, `run`, and a plan that would edit it exit 2 and leave the file unchanged.

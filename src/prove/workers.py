@@ -61,6 +61,7 @@ def write_source(place: Place, agent: Any, intent: dict, stored_path: str) -> di
 def verify_output(place: Place, agent: Any, intent: dict, stored_path: str) -> dict:
     from roblox_studio_adapter.evidence import evidence_record
 
+    _stop_current_play(agent)
     inputs = intent["props"].get("inputs") or {}
     report = agent.playtest.run(
         seconds=float(inputs.get("seconds", 3)),
@@ -255,6 +256,29 @@ def require_ready(intent: dict) -> None:
     missing = missing_input(intent)
     if missing:
         raise NeedPerson(f"{intent['id']} is missing inputs.{missing}")
+
+
+def _stop_current_play(agent: Any) -> None:
+    """Stop a play already in progress so the next run owns the console delta.
+
+    Joining that play snapshots Output. The verdict stays inconclusive even when
+    the probe passed. A fake with no ``state`` is left alone.
+    """
+    playtest = getattr(agent, "playtest", None)
+    state = getattr(playtest, "state", None)
+    if not callable(state):
+        return
+    current = state()
+    if isinstance(current, dict):
+        playing = bool(current.get("playing"))
+    else:
+        playing = bool(getattr(current, "playing", False))
+    if not playing:
+        return
+    stop = getattr(playtest, "stop", None)
+    if not callable(stop):
+        raise NeedPerson("A play is already running and playtest.stop is missing")
+    stop()
 
 
 def _require(intent: dict, key: str) -> str:

@@ -4,7 +4,7 @@ Each row is the adapter surface for that worker. Session setup (`RobloxStudio.co
 
 Paths, play mode, and save rules are in that integration doc. This table is only the method list.
 
-The runtime executes five actions: `explore` `overview`, `script` `read_source`, `script` `write_source`, `playtest` `verify_output`, and `playtest` `change_and_verify`. `docs/runtime.md` is that command list. `read_source`, `write_source`, and `change_and_verify` set `source_sha256` on the script node and store the source text in the local worker-result file. `overview` marks a script `observed` and leaves an existing hash as it is.
+The runtime executes five actions: `explore` `overview`, `script` `read_source`, `script` `write_source`, `playtest` `verify_output`, and `playtest` `change_and_verify`. `verify_output` stops a play already running, then calls `playtest.run`, so the console delta belongs to that intent. `docs/runtime.md` is that command list. `read_source`, `write_source`, and `change_and_verify` set `source_sha256` on the script node and store the source text in the local worker-result file. `overview` marks a script `observed` and leaves an existing hash as it is.
 
 | Worker | Adapter methods | Writes the place? |
 | --- | --- | --- |

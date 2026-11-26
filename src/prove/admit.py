@@ -5,10 +5,13 @@ These commands edit the place graph. They do not call Studio.
 
 from __future__ import annotations
 
+import copy
+import json
 import re
 from pathlib import Path
 
 from prove.graph import Place, PlaceError, script_key, slug
+from prove.planner import play_summary, playtest_inputs, queue_read
 
 SAMPLE = (
     "Copy this sample to graph/places/<id>.local.json and plan that file. "
@@ -68,27 +71,30 @@ def add_goal(
     class_name: str,
     seconds: float,
     name: str | None,
+    probes: list[dict] | None = None,
+    forbid_errors: bool | None = None,
 ) -> list[str]:
     """Add one open goal and one unverified claim. Plan turns the claim into intents."""
     _refuse_sample(place)
     text = statement.strip()
     if not text:
         raise PlaceError("Statement is empty")
-    needles = _strings(contains, "contains")
-    missing = _strings(absent, "absent")
-    if not needles and not missing:
-        raise PlaceError("A goal needs --contains or --absent")
+    if not contains and not absent and not probes:
+        raise PlaceError("A goal needs --contains, --absent, or --probe")
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
         raise PlaceError("Seconds must be a positive number")
+    check = _compose_check(
+        {},
+        contains=contains or None,
+        absent=absent or None,
+        probes=probes or None,
+        seconds=seconds,
+        forbid_errors=forbid_errors,
+    )
     label = (name or text).strip()
     stem = slug(label)[:48]
     goal_id = _fresh(place, f"goal:{stem}")
     claim_id = _fresh(place, f"claim:{stem}")
-    check: dict = {"screenshot": False, "seconds": int(seconds) if float(seconds).is_integer() else seconds}
-    if needles:
-        check["expect_contains"] = needles
-    if missing:
-        check["expect_absent"] = missing
     claim_props: dict = {"goal_id": goal_id, "statement": text, "check": check}
     lines = [f"goal {goal_id}", f"claim {claim_id}"]
     place.nodes().append(
@@ -138,6 +144,97 @@ def fill_source(place: Place, intent_id: str, source: str) -> None:
     if not isinstance(inputs, dict):
         raise PlaceError(f"{intent_id} is missing inputs")
     inputs["source"] = source
+
+
+def bind_claim(
+    place: Place,
+    claim_id: str,
+    *,
+    script: str | None = None,
+    class_name: str = "Script",
+    contains: list[str] | None = None,
+    absent: list[str] | None = None,
+    probes: list[dict] | None = None,
+    seconds: float | None = None,
+    forbid_errors: bool | None = None,
+) -> list[str]:
+    """Point a claim at a script, replace its check, or both. Does not call Studio.
+
+    A proposed verify that checks the claim takes the new playtest inputs.
+    A new script with no local source gets a read, and that verify waits on it.
+    A finished verify is left as it is.
+    """
+    _refuse_sample(place)
+    claim = place.node(claim_id)
+    if claim is None or claim.get("type") != "claim":
+        raise PlaceError(f"No claim named {claim_id}")
+    if (
+        script is None
+        and not contains
+        and not absent
+        and not probes
+        and seconds is None
+        and forbid_errors is None
+    ):
+        raise PlaceError("Bind needs a script path or a check change")
+    if script is not None:
+        if not str(class_name or "").strip():
+            raise PlaceError("Class name is empty")
+        if "." not in script_key(script):
+            raise PlaceError("Script path needs a service and a script name, like game.ServerScriptService.Hello")
+    props = claim.get("props")
+    if not isinstance(props, dict):
+        props = {}
+        claim["props"] = props
+    lines: list[str] = []
+    check_changed = False
+    if contains or absent or probes or seconds is not None or forbid_errors is not None:
+        props["check"] = _compose_check(
+            props.get("check") if isinstance(props.get("check"), dict) else {},
+            contains=contains or None,
+            absent=absent or None,
+            probes=probes or None,
+            seconds=seconds,
+            forbid_errors=forbid_errors,
+        )
+        check_changed = True
+        lines.append(f"check {claim_id}")
+    node = None
+    path = None
+    if script is not None:
+        if not class_name.strip():
+            raise PlaceError("Class name is empty")
+        node = _ensure_script(place, script, class_name.strip(), str(props.get("statement") or claim.get("name") or "")[:120])
+        path = node["props"]["path"]
+        props["path"] = path
+        _retarget_script(place, claim_id, node["id"])
+        lines.append(f"script {node['id']}")
+    verifies = _proposed_verifies(place, claim_id)
+    if check_changed:
+        inputs = playtest_inputs(props.get("check")) or {}
+        summary = play_summary(claim_id, inputs)
+        for intent in verifies:
+            _apply_play_inputs(intent, inputs)
+            intent["props"]["summary"] = summary
+            if path is None:
+                lines.append(f"updated {intent['id']}")
+    if path is not None:
+        goal_id = props.get("goal_id")
+        read, created = queue_read(
+            place,
+            goal_id=goal_id if isinstance(goal_id, str) else "",
+            claim_id=claim_id,
+            path=path,
+            node=node,
+        )
+        if created and read is not None:
+            lines.append(f"added {read['id']} script read_source")
+        if read is not None:
+            for intent in verifies:
+                intent["props"]["after"] = read["id"]
+                lines.append(f"waiting {intent['id']} after {read['id']}")
+    place._assert_graph()
+    return lines
 
 
 def answer_question(place: Place, question_id: str, text: str) -> None:
@@ -224,6 +321,126 @@ def _edge(place: Place, edge_id: str, edge_type: str, source: str, target: str) 
         if edge.get("type") == edge_type and edge.get("from") == source and edge.get("to") == target:
             return
     place.data["edges"].append({"id": edge_id, "type": edge_type, "from": source, "to": target})
+
+
+def _compose_check(
+    base: dict,
+    *,
+    contains: list[str] | None,
+    absent: list[str] | None,
+    probes: list[dict] | None,
+    seconds: float | None,
+    forbid_errors: bool | None,
+) -> dict:
+    check = copy.deepcopy(base)
+    if not isinstance(check.get("screenshot"), bool):
+        check["screenshot"] = False
+    if seconds is not None:
+        check["seconds"] = _seconds(seconds)
+    elif "seconds" not in check:
+        check["seconds"] = 3
+    else:
+        check["seconds"] = _seconds(check["seconds"])
+    if contains:
+        check["expect_contains"] = _strings(contains, "contains")
+        if not probes:
+            check.pop("probes", None)
+    if absent:
+        check["expect_absent"] = _strings(absent, "absent")
+    if probes:
+        check["probes"] = _clean_probes(probes)
+        if not contains:
+            check.pop("expect_contains", None)
+        if not absent:
+            check.pop("expect_absent", None)
+    if forbid_errors is not None:
+        check["forbid_errors"] = bool(forbid_errors)
+    elif _probe_only(check):
+        check["forbid_errors"] = False
+    if playtest_inputs(check) is None:
+        raise PlaceError("A check needs --contains, --absent, or --probe")
+    return check
+
+
+def _probe_only(check: dict) -> bool:
+    probes = check.get("probes")
+    return bool(probes) and not check.get("expect_contains") and not check.get("expect_absent")
+
+
+def _clean_probes(items: list) -> list[dict]:
+    if not isinstance(items, list) or not items:
+        raise PlaceError("A probe list is empty")
+    cleaned = []
+    seen: set[str] = set()
+    for index, item in enumerate(items, start=1):
+        label = f"probes[{index}]"
+        if not isinstance(item, dict):
+            raise PlaceError(f"{label} must be an object")
+        probe_id = item.get("id")
+        expression = item.get("expression")
+        datamodel = item.get("datamodel")
+        if not isinstance(probe_id, str) or probe_id.strip() == "":
+            raise PlaceError(f"{label}.id must be a non-empty string")
+        if probe_id in seen:
+            raise PlaceError(f"{label}.id duplicates {probe_id!r}")
+        seen.add(probe_id)
+        if not isinstance(expression, str) or expression.strip() == "" or "\n" in expression or "\r" in expression:
+            raise PlaceError(f"{label}.expression must be one single-line Luau expression")
+        if datamodel not in ("Server", "Client"):
+            raise PlaceError(f"{label}.datamodel must be Server or Client")
+        probe = {"id": probe_id, "expression": expression, "datamodel": datamodel}
+        if "equals" in item:
+            try:
+                json.dumps(item["equals"])
+            except TypeError as exc:
+                raise PlaceError(f"{label}.equals must be JSON") from exc
+            probe["equals"] = item["equals"]
+        cleaned.append(probe)
+    return cleaned
+
+
+def _seconds(value: object) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise PlaceError("Seconds must be a positive number")
+    number = float(value)
+    return int(number) if number.is_integer() else number
+
+
+def _proposed_verifies(place: Place, claim_id: str) -> list[dict]:
+    found = []
+    for intent in place.intents():
+        if intent.get("status") != "proposed":
+            continue
+        props = intent.get("props") or {}
+        if props.get("worker") != "playtest" or props.get("action") not in {"verify_output", "change_and_verify"}:
+            continue
+        if claim_id in place.claims_checked_by(intent["id"]):
+            found.append(intent)
+    return found
+
+
+def _apply_play_inputs(intent: dict, inputs: dict) -> None:
+    current = (intent.get("props") or {}).get("inputs")
+    if not isinstance(current, dict):
+        current = {}
+        intent["props"]["inputs"] = current
+    for key in ("seconds", "screenshot", "expect_contains", "expect_absent", "forbid_errors", "probes"):
+        if key in inputs:
+            current[key] = copy.deepcopy(inputs[key])
+        else:
+            current.pop(key, None)
+
+
+def _retarget_script(place: Place, claim_id: str, script_id: str) -> None:
+    kept = []
+    for edge in place.data["edges"]:
+        if edge.get("type") == "about" and edge.get("from") == claim_id:
+            target = place.node(str(edge.get("to")))
+            if target is not None and target.get("type") == "script":
+                continue
+        kept.append(edge)
+    place.data["edges"] = kept
+    _edge(place, f"edge:{claim_id}:about:{script_id}", "about", claim_id, script_id)
 
 
 def _strings(values: list[str], label: str) -> list[str]:

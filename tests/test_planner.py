@@ -313,6 +313,39 @@ class PlanTests(PlanCase):
         proposed = [intent for intent in saved.intents() if intent["status"] == "proposed"]
         self.assertEqual([intent["props"]["action"] for intent in proposed], ["verify_output"])
 
+    def test_probe_only_check_seeds_a_verify(self) -> None:
+        place = self.place()
+        for intent in place.intents():
+            intent["status"] = "rejected"
+        claim = place.node("claim:hello-prints")
+        claim["props"]["goal_id"] = "goal:hello"
+        claim["props"]["path"] = HELLO
+        claim["props"]["check"] = {
+            "seconds": 1,
+            "probes": [{"id": "simulation-present", "expression": "true", "datamodel": "Server", "equals": True}],
+        }
+        plan(place)
+        saved = Place.load(place.path)
+        proposed = [intent for intent in saved.intents() if intent["status"] == "proposed"]
+        self.assertEqual([intent["props"]["action"] for intent in proposed], ["read_source", "verify_output"])
+        inputs = proposed[1]["props"]["inputs"]
+        self.assertEqual(inputs["probes"][0]["id"], "simulation-present")
+        self.assertIs(inputs["probes"][0]["equals"], True)
+        self.assertNotIn("expect_contains", inputs)
+        self.assertNotIn("forbid_errors", inputs)
+        self.assertIn("simulation-present", proposed[1]["props"]["summary"])
+
+    def test_a_probe_that_is_not_an_object_does_not_seed(self) -> None:
+        place = self.place()
+        for intent in place.intents():
+            intent["status"] = "rejected"
+        claim = place.node("claim:hello-prints")
+        claim["props"]["goal_id"] = "goal:hello"
+        claim["props"]["check"] = {"probes": ["nope"]}
+        result = plan(place)
+        self.assertFalse(result.changed)
+        self.assertIn("nothing to add", result.lines[0])
+
     def test_reset_replays_the_playtest_and_leaves_the_claim(self) -> None:
         place = self.place()
         place.node("intent:read-hello")["status"] = "done"

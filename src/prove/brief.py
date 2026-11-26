@@ -41,6 +41,10 @@ def brief(place: Place) -> dict:
             reason = seed_block(place)
             if reason:
                 payload.update(action="blocked", reason=reason)
+                if reason.startswith("need script path"):
+                    scripts = _scripts(place)
+                    if scripts:
+                        payload["scripts"] = scripts
             else:
                 payload["action"] = "plan"
         return payload
@@ -100,6 +104,11 @@ def format_brief(payload: dict) -> str:
         if value is None or value == "":
             continue
         lines.append(f"{key} {_one_line(value)}")
+    for item in payload.get("scripts") or []:
+        line = f"script {item['id']} {item['path']}"
+        if item.get("class_name"):
+            line += f" {item['class_name']}"
+        lines.append(line)
     questions = payload.get("questions") or []
     if questions:
         for item in questions:
@@ -110,6 +119,27 @@ def format_brief(payload: dict) -> str:
     if goals:
         lines.append("open " + " ".join(goals))
     return "\n".join(lines)
+
+
+def _scripts(place: Place) -> list[dict]:
+    found = []
+    for node in place.nodes():
+        if node.get("type") != "script":
+            continue
+        props = node.get("props") or {}
+        path = props.get("path")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        class_name = props.get("class_name")
+        found.append(
+            {
+                "id": node["id"],
+                "path": path,
+                "class_name": class_name if isinstance(class_name, str) else "",
+            }
+        )
+    found.sort(key=lambda item: (item["path"], item["id"]))
+    return found
 
 
 def _questions(place: Place) -> list[dict]:
