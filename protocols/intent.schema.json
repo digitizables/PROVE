@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/digitizables/PROVE/blob/main/protocols/intent.schema.json",
+  "title": "Intent node",
+  "description": "prove.intent/1. A node of type intent inside a place file. Cutting rules are in planner/README.md. The worker enum is this file. Methods are in workers/catalog.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "name", "status", "props"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "type": { "const": "intent" },
+    "name": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["proposed", "active", "done", "blocked", "rejected"]
+    },
+    "props": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_id",
+        "worker",
+        "action",
+        "summary",
+        "inputs",
+        "done_when",
+        "must_not",
+        "after",
+        "order"
+      ],
+      "properties": {
+        "goal_id": { "type": "string", "minLength": 1 },
+        "worker": {
+          "enum": [
+            "explore",
+            "script",
+            "datamodel",
+            "luau",
+            "playtest",
+            "capture",
+            "input",
+            "docs",
+            "assets",
+            "graph"
+          ]
+        },
+        "action": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "inputs": { "type": "object" },
+        "done_when": { "type": "string", "minLength": 1 },
+        "must_not": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "after": { "type": ["string", "null"] },
+        "order": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

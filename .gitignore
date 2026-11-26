@@ -1,0 +1,21 @@
+.grok/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.studio-adapter/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local place files and captured evidence stay on the machine.
+*.rbxl
+*.rbxlx
+graph/places/*.local.json
+evidence/runs/*
+!evidence/runs/.gitkeep

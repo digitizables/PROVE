@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/digitizables/PROVE/blob/main/protocols/worker-result.schema.json",
+  "title": "Worker result",
+  "description": "prove.worker-result/1. How a session applies graph_patch and follow_ups is in workers/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "intent_id", "evidence", "graph_patch", "follow_ups"],
+  "properties": {
+    "schema": { "const": "prove.worker-result/1" },
+    "intent_id": { "type": "string", "minLength": 1 },
+    "evidence": { "$ref": "evidence.schema.json" },
+    "graph_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upsert_nodes", "upsert_edges", "set_status"],
+      "properties": {
+        "upsert_nodes": {
+          "type": "array",
+          "items": { "$ref": "place.schema.json#/$defs/node" }
+        },
+        "upsert_edges": {
+          "type": "array",
+          "items": { "$ref": "place.schema.json#/$defs/edge" }
+        },
+        "set_status": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "status": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "follow_ups": {
+      "type": "array",
+      "items": { "$ref": "intent.schema.json" }
+    }
+  }
+}

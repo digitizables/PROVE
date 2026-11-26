@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/digitizables/PROVE/blob/main/protocols/place.schema.json",
+  "title": "Place graph",
+  "description": "prove.place/1. Status meanings and edge rules are in graph/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "title", "identity", "updated_at", "nodes", "edges"],
+  "properties": {
+    "schema": { "const": "prove.place/1" },
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["place_id", "universe_id", "file_name", "display_name"],
+      "properties": {
+        "place_id": { "type": ["string", "null"] },
+        "universe_id": { "type": ["string", "null"] },
+        "file_name": { "type": ["string", "null"] },
+        "display_name": { "type": ["string", "null"] }
+      }
+    },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "name", "status", "props"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": [
+            "place",
+            "service",
+            "instance",
+            "script",
+            "system",
+            "goal",
+            "intent",
+            "claim",
+            "evidence",
+            "question"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "props": { "type": "object" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "from", "to"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": [
+            "contains",
+            "implements",
+            "depends_on",
+            "spawned_from",
+            "checks",
+            "about",
+            "supports",
+            "contradicts"
+          ]
+        },
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

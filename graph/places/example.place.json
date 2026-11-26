@@ -1,0 +1,131 @@
+{
+  "schema": "prove.place/1",
+  "id": "example",
+  "title": "Example place",
+  "identity": {
+    "place_id": null,
+    "universe_id": null,
+    "file_name": null,
+    "display_name": "Example"
+  },
+  "updated_at": "2026-11-25T00:00:00Z",
+  "nodes": [
+    {
+      "id": "place:example",
+      "type": "place",
+      "name": "Example",
+      "status": "active",
+      "props": {}
+    },
+    {
+      "id": "service:workspace",
+      "type": "service",
+      "name": "Workspace",
+      "status": "unverified",
+      "props": { "tree_path": "Workspace" }
+    },
+    {
+      "id": "service:serverscriptservice",
+      "type": "service",
+      "name": "ServerScriptService",
+      "status": "unverified",
+      "props": { "tree_path": "ServerScriptService" }
+    },
+    {
+      "id": "script:hello",
+      "type": "script",
+      "name": "HelloAgent",
+      "status": "unverified",
+      "props": {
+        "path": "game.ServerScriptService.HelloAgent",
+        "class_name": "Script",
+        "responsibility": "Prints a ready line when the server starts."
+      }
+    },
+    {
+      "id": "system:arrival",
+      "type": "system",
+      "name": "Arrival",
+      "status": "sketched",
+      "props": { "summary": "The moment a server starts a session." }
+    },
+    {
+      "id": "goal:hello",
+      "type": "goal",
+      "name": "Hello line",
+      "status": "open",
+      "props": {
+        "statement": "On a solo playtest the server prints hello from the agent.",
+        "acceptance": "A playtest evidence record verdict is pass for output.contains of that string."
+      }
+    },
+    {
+      "id": "claim:hello-prints",
+      "type": "claim",
+      "name": "Hello print",
+      "status": "unverified",
+      "props": {
+        "statement": "Server output during a solo playtest contains hello from the agent."
+      }
+    },
+    {
+      "id": "question:which-studio",
+      "type": "question",
+      "name": "Which Studio window",
+      "status": "open",
+      "props": {
+        "text": "Which open Studio window is this example place?"
+      }
+    },
+    {
+      "id": "intent:read-hello",
+      "type": "intent",
+      "name": "Read HelloAgent",
+      "status": "proposed",
+      "props": {
+        "goal_id": "goal:hello",
+        "worker": "script",
+        "action": "read_source",
+        "summary": "Read HelloAgent and record its source hash.",
+        "inputs": { "path": "game.ServerScriptService.HelloAgent" },
+        "done_when": "script:hello status is observed and props.source_sha256 is set.",
+        "must_not": ["Write the script.", "Start a playtest.", "Save the place."],
+        "after": null,
+        "order": 1
+      }
+    },
+    {
+      "id": "intent:verify-hello",
+      "type": "intent",
+      "name": "Verify hello print",
+      "status": "proposed",
+      "props": {
+        "goal_id": "goal:hello",
+        "worker": "playtest",
+        "action": "verify_output",
+        "summary": "Solo playtest requires the hello line and no hello failure.",
+        "inputs": {
+          "seconds": 3,
+          "screenshot": false,
+          "expect_contains": ["hello from the agent"],
+          "expect_absent": ["hello failed"]
+        },
+        "done_when": "Evidence verdict is pass for output.contains.1.",
+        "must_not": ["Edit any script.", "Save the place.", "Publish."],
+        "after": "intent:read-hello",
+        "order": 2
+      }
+    }
+  ],
+  "edges": [
+    { "id": "edge:place-workspace", "type": "contains", "from": "place:example", "to": "service:workspace" },
+    { "id": "edge:place-server", "type": "contains", "from": "place:example", "to": "service:serverscriptservice" },
+    { "id": "edge:server-hello", "type": "contains", "from": "service:serverscriptservice", "to": "script:hello" },
+    { "id": "edge:hello-arrival", "type": "implements", "from": "script:hello", "to": "system:arrival" },
+    { "id": "edge:claim-arrival", "type": "about", "from": "claim:hello-prints", "to": "system:arrival" },
+    { "id": "edge:question-place", "type": "about", "from": "question:which-studio", "to": "place:example" },
+    { "id": "edge:read-goal", "type": "spawned_from", "from": "intent:read-hello", "to": "goal:hello" },
+    { "id": "edge:verify-goal", "type": "spawned_from", "from": "intent:verify-hello", "to": "goal:hello" },
+    { "id": "edge:verify-claim", "type": "checks", "from": "intent:verify-hello", "to": "claim:hello-prints" }
+  ]
+}

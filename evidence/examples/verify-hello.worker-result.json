@@ -1,0 +1,105 @@
+{
+  "schema": "prove.worker-result/1",
+  "intent_id": "intent:verify-hello",
+  "evidence": {
+    "schema": "prove.evidence/1",
+    "id": "evidence:verify-hello",
+    "intent_id": "intent:verify-hello",
+    "place_id": "example",
+    "worker": "playtest",
+    "captured_at": "2026-11-25T00:00:00Z",
+    "verdict": "pass",
+    "summary": "Solo playtest output contained hello from the agent.",
+    "observations": [
+      {
+        "kind": "check",
+        "text": "output.contains.1 passed for hello from the agent."
+      }
+    ],
+    "artifacts": [],
+    "limits": "Solo playtest. Console delta was contiguous. No screenshot. Server and client trees were not probed.",
+    "studio": {
+      "schema": "roblox-studio-adapter.evidence/1",
+      "kind": "playtest",
+      "captured_at": "2026-11-25T00:00:00Z",
+      "studio_id": null,
+      "intent_id": "intent:verify-hello",
+      "passed": true,
+      "failures": [],
+      "checks": [
+        {
+          "id": "output.error_free",
+          "op": "error_free",
+          "expect": "",
+          "passed": true,
+          "detail": "no output errors"
+        },
+        {
+          "id": "output.contains.1",
+          "op": "contains",
+          "expect": "hello from the agent",
+          "passed": true,
+          "detail": "output contained 'hello from the agent'"
+        },
+        {
+          "id": "output.absent.1",
+          "op": "absent",
+          "expect": "hello failed",
+          "passed": true,
+          "detail": "output omitted 'hello failed'"
+        }
+      ],
+      "play": {
+        "mode_before": "Edit",
+        "mode_after": "Edit",
+        "started": true,
+        "stopped": true,
+        "seconds": 3
+      },
+      "console": {
+        "reset": false,
+        "truncated": false,
+        "error_count": 0,
+        "warning_count": 0,
+        "errors": [],
+        "warnings": [],
+        "excerpt": "hello from the agent"
+      },
+      "artifacts": {
+        "screenshots": [],
+        "video": null
+      },
+      "notes": [
+        "start_stop_play runs a solo playtest. It does not start Team Test or a multi-client session.",
+        "Runtime changes disappear when the playtest stops. Edit scripts only after stop."
+      ]
+    }
+  },
+  "graph_patch": {
+    "upsert_nodes": [
+      {
+        "id": "evidence:verify-hello",
+        "type": "evidence",
+        "name": "HelloAgent playtest",
+        "status": "pass",
+        "props": {
+          "path": "evidence/examples/verify-hello.worker-result.json",
+          "summary": "Solo playtest output contained hello from the agent."
+        }
+      }
+    ],
+    "upsert_edges": [
+      {
+        "id": "edge:hello-supported",
+        "type": "supports",
+        "from": "evidence:verify-hello",
+        "to": "claim:hello-prints"
+      }
+    ],
+    "set_status": [
+      { "id": "claim:hello-prints", "status": "supported" },
+      { "id": "intent:verify-hello", "status": "done" }
+    ]
+  },
+  "follow_ups": []
+}
